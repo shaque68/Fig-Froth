@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vscode/settings.json
+.env
+.env.*
+!.env.example
