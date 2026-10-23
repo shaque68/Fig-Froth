@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, CloudSun, Pause, Play, RotateCcw, SkipForward, Sun, Thermometer, X } from "lucide-react";
+import { BellRing, CloudSun, Pause, Play, Presentation, RotateCcw, SkipForward, Sun, Thermometer, X } from "lucide-react";
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
 import { formatDaysLeft, needsAttention, statusLabel, summarizePantry } from "../engine/pantry";
@@ -19,6 +19,7 @@ import { ProfitPanel } from "./ProfitPanel";
 import { OrdersFeed } from "./OrdersFeed";
 import { Pantry, TinDetail, type Drain } from "./Pantry";
 import { PoCard, type WriteRequest } from "./PoCard";
+import { PresenterBar, TOUR } from "./Presenter";
 import { MorningBrief, WritingDialog, writeText, type Written } from "./Writing";
 import "../ops.css";
 
@@ -36,6 +37,11 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "profit", label: "Drink profits" },
   { id: "invoices", label: "Invoice check" },
 ];
+
+const LARGE_TEXT_KEY = "fig-froth-ops-large-text";
+function readLargeText() {
+  try { return localStorage.getItem(LARGE_TEXT_KEY) === "1"; } catch { return false; }
+}
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -86,6 +92,9 @@ export default function OpsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [claudeMode, setClaudeMode] = useState(false);
   const [writing, setWriting] = useState<{ kind: "explain" | "supplier-message"; poId: string; written: Written | null } | null>(null);
+  const [presenting, setPresenting] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+  const [largeText, setLargeTextState] = useState(readLargeText);
   const reducedMotion = usePrefersReducedMotion();
 
   const tins = useMemo(() => summarizePantry(world), [world]);
@@ -174,6 +183,29 @@ export default function OpsPage() {
   const runSpecial = () => update((next) => { if (next.specialSuggestion) { startSpecial(next, next.specialSuggestion); next.specialSuggestion = null; } });
   const resolve = (id: string, decision: "accept" | "dispute") => update((next) => { resolveInvoice(next, id, decision); });
 
+  function setLargeText(value: boolean) {
+    setLargeTextState(value);
+    try { localStorage.setItem(LARGE_TEXT_KEY, value ? "1" : "0"); } catch { /* per-viewer preference only */ }
+  }
+
+  function startPresenting() {
+    setScenarioId("normal");
+    reset(seed, "normal");
+    setTourStep(0);
+    setPresenting(true);
+  }
+
+  // Each tour step opens its tab and brings its part of the page into view.
+  useEffect(() => {
+    if (!presenting) return;
+    const step = TOUR[tourStep];
+    setTab(step.tab);
+    const timer = window.setTimeout(() => {
+      document.getElementById(step.focus)?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [presenting, tourStep, reducedMotion]);
+
   async function toggleClaude() {
     if (claudeMode) {
       setClaudeMode(false);
@@ -214,21 +246,24 @@ export default function OpsPage() {
   const responses = scenario.response ? world.log.filter((entry) => entry.actor !== "system" && scenario.response!.test(`${entry.title} ${entry.detail ?? ""}`)).slice(-3).reverse() : [];
 
   return (
-    <div className={`ops-page ${reducedMotion ? "reduce-motion" : ""}`}>
+    <div className={`ops-page ${reducedMotion ? "reduce-motion" : ""} ${largeText ? "ops-large" : ""} ${presenting ? "is-presenting" : ""}`}>
       <header className="ops-hero">
         <div>
           <p className="ops-eyebrow"><span className="ops-eyebrow-line" /> Behind the counter · a demo with made-up data</p>
           <h1>How the shelves <em>stay stocked.</em></h1>
           <p className="ops-lede">Every drink uses a little matcha, milk, and a cup. Watch orders drain the shelf, then see how a restock agent keeps it full without wasting money.</p>
         </div>
-        <div className="ops-hero-stat" aria-live="polite">
-          <span>Days of matcha left</span>
-          <strong>{matcha ? formatDaysLeft(matcha.daysLeft) : "—"}</strong>
-          <small>{matcha ? statusLabel(matcha) : ""}</small>
+        <div className="ops-hero-side">
+          <div className="ops-hero-stat" aria-live="polite">
+            <span>Days of matcha left</span>
+            <strong>{matcha ? formatDaysLeft(matcha.daysLeft) : "—"}</strong>
+            <small>{matcha ? statusLabel(matcha) : ""}</small>
+          </div>
+          {!presenting && <button className="ops-button" onClick={startPresenting}><Presentation size={17} /> Presenter mode</button>}
         </div>
       </header>
 
-      <div className="ops-controls" role="region" aria-label="Demo controls">
+      <div className="ops-controls" id="ops-controls" role="region" aria-label="Demo controls">
         <div className="ops-clock">
           <strong>{formatDay(world.day, "long")}</strong>
           <span>{world.queue.length === 0 ? "Closed for the night" : formatClock(world.minute)}</span>
@@ -359,7 +394,7 @@ export default function OpsPage() {
 
       {tab === "orders" && (
         <section className="ops-panel" aria-labelledby="po-title">
-          <div className="ops-panel-head"><div><p className="ops-eyebrow">Drafted by the agent · nothing is really sent</p><h2 id="po-title">Purchase <em>orders.</em></h2></div></div>
+          <div className="ops-panel-head"><div><p className="ops-eyebrow">Drafted by the agent · fictional suppliers · nothing is really sent</p><h2 id="po-title">Purchase <em>orders.</em></h2></div></div>
           {world.purchaseOrders.length === 0 && <p className="ops-muted">No purchase orders yet. Run a day and the agent will draft its first ones at closing.</p>}
           <PoGroup title="Waiting for your approval" pos={awaiting} today={world.day} onApprove={approve} onReject={reject} onWrite={write} />
           <PoGroup title="On the way" pos={byNewest.filter((po) => po.status === "sent" || po.status === "approved")} today={world.day} onWrite={write} />
@@ -401,6 +436,17 @@ export default function OpsPage() {
           <div className="ops-panel-head"><div><p className="ops-eyebrow">Ordered = arrived = billed?</p><h2 id="invoice-title">Invoice <em>check.</em></h2></div></div>
           <InvoicePanel world={world} onResolve={resolve} />
         </section>
+      )}
+
+      {presenting && (
+        <PresenterBar
+          step={tourStep}
+          setStep={setTourStep}
+          onClose={() => setPresenting(false)}
+          actions={{ serveNext, runWeek: () => runDays(7), runDay: () => runDays(1), loadScenario: (id) => { chooseScenario(id); setTab("today"); } }}
+          largeText={largeText}
+          setLargeText={setLargeText}
+        />
       )}
 
       {writing && <WritingDialog title={`${writing.kind === "explain" ? "Why" : "Message to the supplier for"} ${writing.poId}${writing.kind === "explain" ? "?" : ""}`} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}

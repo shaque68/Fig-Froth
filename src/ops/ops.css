@@ -367,3 +367,33 @@
 .po-writing { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
 .po-writing .text-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 .po-writing .text-link:hover { text-decoration: underline; }
+
+/* Presenter mode */
+.ops-hero-side { display: grid; gap: 10px; justify-items: stretch; }
+.ops-page.is-presenting { padding-bottom: 260px; }
+.ops-page.ops-large { zoom: 1.18; }
+.presenter-bar { position: fixed; z-index: 30; right: 16px; bottom: 16px; left: 16px; max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; padding: 16px 20px 14px; color: #f8f6ed; background: var(--green-dark); box-shadow: 0 12px 40px rgba(21, 28, 22, .35); }
+.presenter-progress { grid-column: 1 / -1; display: flex; gap: 4px; }
+.presenter-progress span { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .2); }
+.presenter-progress span.is-done { background: #e4c3aa; }
+.presenter-bar .ops-eyebrow { margin: 4px 0 2px; color: #c9d3bf; }
+.presenter-bar h2 { margin: 0 0 4px; color: #fbf8ed !important; font-size: 28px; }
+.presenter-say { margin: 0; max-width: 720px; font-size: 18px; line-height: 1.45; }
+.presenter-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.presenter-bar .ops-button { border-color: #7f9178; color: #f8f6ed; background: transparent; }
+.presenter-bar .ops-button-primary { border-color: #e4c3aa; color: var(--green-dark); background: #f3e7d6; }
+.presenter-bar .ops-button:hover:not(:disabled) { border-color: #f3e7d6; background: rgba(255, 255, 255, .08); }
+.presenter-bar .ops-button-primary:hover:not(:disabled) { color: var(--green-dark); background: #fff8ee; }
+.presenter-bar .ops-button:disabled { opacity: .4; }
+.presenter-nav { display: grid; grid-template-columns: auto auto; align-content: start; gap: 8px; }
+.presenter-large { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.presenter-large input { width: 18px; height: 18px; accent-color: #e4c3aa; }
+.presenter-close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 50%; color: #f8f6ed; background: transparent; cursor: pointer; }
+.presenter-nav { padding-top: 26px; }
+.presenter-hint { grid-column: 1 / -1; color: #aebba6; font-size: 13px; }
+.presenter-bar button:focus-visible, .presenter-bar input:focus-visible { outline: 3px solid #e4c3aa; outline-offset: 2px; }
+@media (max-width: 760px) {
+  .presenter-bar { grid-template-columns: 1fr; }
+  .presenter-nav { padding-top: 0; }
+  .ops-page.is-presenting { padding-bottom: 360px; }
+}
