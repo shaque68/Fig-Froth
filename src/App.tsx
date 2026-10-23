@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownWideNarrow, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight,
   Clock3, Coffee, Instagram, Leaf, MapPin, Menu as MenuIcon, Minus, Plus,
@@ -6,9 +6,12 @@ import {
 } from "lucide-react";
 import { initialProducts, money, type ModifierGroup, type Product } from "./catalog";
 
-type View = "home" | "menu" | "cart" | "admin" | "checkout" | "confirmation";
+type View = "home" | "menu" | "cart" | "admin" | "checkout" | "confirmation" | "ops";
 type CartItem = { key: string; productId: string; quantity: number; selections: Record<string, string> };
 type Toast = { message: string; kind: "success" | "error" } | null;
+
+const OpsPage = lazy(() => import("./ops/ui/OpsPage"));
+const OPS_HASH = "#behind-the-counter";
 
 const CATALOG_KEY = "fig-froth-catalog-v1";
 const CART_KEY = "fig-froth-cart-v1";
@@ -48,7 +51,7 @@ function isAvailable(product: Product) {
 function App() {
   const [products, setProducts] = useState<Product[]>(() => readStorage(CATALOG_KEY, initialProducts));
   const [cart, setCart] = useState<CartItem[]>(() => readStorage(CART_KEY, []));
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>(() => window.location.hash === OPS_HASH ? "ops" : "home");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [menuCategory, setMenuCategory] = useState("All sips");
   const [search, setSearch] = useState("");
@@ -68,6 +71,10 @@ function App() {
 
   useEffect(() => localStorage.setItem(CATALOG_KEY, JSON.stringify(products)), [products]);
   useEffect(() => localStorage.setItem(CART_KEY, JSON.stringify(cart)), [cart]);
+  useEffect(() => {
+    if (view === "ops" && window.location.hash !== OPS_HASH) window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}${OPS_HASH}`);
+    if (view !== "ops" && window.location.hash === OPS_HASH) window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`);
+  }, [view]);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("square_checkout") !== "returned") return;
     setSquareReturn(true);
@@ -239,6 +246,7 @@ function App() {
           <button className={view === "home" ? "nav-active" : ""} onClick={() => showView("home")}>Home</button>
           <button className={view === "menu" ? "nav-active" : ""} onClick={() => openMenu()}>The menu</button>
           <button onClick={() => setLocationOpen(true)}>Our little corner <MapPin size={13} /></button>
+          <button className={view === "ops" ? "nav-active" : ""} onClick={() => showView("ops")}>Behind the counter</button>
         </nav>
         <div className="header-actions">
           <button className="pickup-chip" onClick={() => setLocationOpen(true)}><MapPin size={15} /><span>Pickup · Paterson</span><ChevronDown size={13} /></button>
@@ -253,6 +261,7 @@ function App() {
         {view === "menu" && <MenuPage products={displayedProducts} categories={availableCategories} category={menuCategory} setCategory={setMenuCategory} search={search} setSearch={setSearch} sortOrder={sortOrder} setSortOrder={setSortOrder} onSelect={setSelectedProduct} />}
         {view === "cart" && <CartPage cart={cart} products={productById} blockedItems={blockedCartItems} subtotal={subtotal} tax={tax} total={total} pickupTime={pickupTime} setPickupTime={setPickupTime} coupon={coupon} setCoupon={setCoupon} couponMessage={couponMessage} applyCoupon={applyCoupon} onQuantity={updateQuantity} onMenu={() => openMenu()} onCheckout={() => showView("checkout")} onLocation={() => setLocationOpen(true)} />}
         {view === "checkout" && <CheckoutPage items={cart} blockedItems={blockedCartItems} pickupTime={pickupTime} checkoutAvailable={checkoutAvailable} environment={checkoutEnvironment} error={checkoutError} isSubmitting={isCheckingOut} onBack={() => showView("cart")} onSubmit={startSquareCheckout} />}
+        {view === "ops" && <Suspense fallback={<div className="page-container">Loading the demo…</div>}><OpsPage /></Suspense>}
         {view === "admin" && <AdminPage products={products} onUpdate={patchProduct} onAdd={(product) => setProducts((current) => [...current, product])} onReset={() => { setProducts(initialProducts); setToast({ message: "Menu restored to the original demo catalog.", kind: "success" }); }} />}
       </main>
 

@@ -58,17 +58,17 @@ export type Supplier = {
 
 export const SHELVES: Array<{ id: Shelf; name: string }> = [
   { id: "matcha", name: "The matcha shelf" },
-  { id: "dairy", name: "The fridge" },
   { id: "flavors", name: "Syrups & purées" },
+  { id: "dairy", name: "The fridge" },
   { id: "packaging", name: "Cups & such" },
 ];
 
 export const INGREDIENTS: Ingredient[] = [
   { id: "ceremonial-matcha", name: "Ceremonial matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 45, color: "#6f8f52", homeSupplierId: "mossy-hill" },
   { id: "culinary-matcha", name: "Culinary matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 60, color: "#93a26a", homeSupplierId: "mossy-hill" },
-  { id: "whole-milk", name: "Whole milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 10, color: "#efe8d6", homeSupplierId: "little-meadow" },
+  { id: "whole-milk", name: "Whole milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 10, color: "#e2d5b6", homeSupplierId: "little-meadow" },
   { id: "oat-milk", name: "Oat milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 30, color: "#dcc9a3", homeSupplierId: "little-meadow" },
-  { id: "foam-cream", name: "Cold foam cream", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 14, color: "#f3ede0", homeSupplierId: "little-meadow" },
+  { id: "foam-cream", name: "Cold foam cream", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 14, color: "#eadcc0", homeSupplierId: "little-meadow" },
   { id: "fig-syrup", name: "Fig syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 30, color: "#8c5a6a", homeSupplierId: "orchard-lane" },
   { id: "strawberry-puree", name: "Strawberry purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#cf7f8b", homeSupplierId: "orchard-lane" },
   { id: "mango-puree", name: "Mango purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#e3ac4b", homeSupplierId: "orchard-lane" },
