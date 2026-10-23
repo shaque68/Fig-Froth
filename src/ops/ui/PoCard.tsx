@@ -14,6 +14,7 @@ export const PO_STATUS_LABEL: Record<PoStatus, string> = {
   invoiced: "Invoiced",
   matched: "Matched",
   flagged: "Needs review",
+  disputed: "Disputed",
   rejected: "Rejected",
 };
 

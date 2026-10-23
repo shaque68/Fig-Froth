@@ -2,6 +2,8 @@
 // Every quantity and dollar amount comes from the tested rules in planner.ts.
 import { INGREDIENTS, SETTINGS, SUPPLIERS, getIngredient, getSupplier, offerFor } from "./data.ts";
 import { formatCents, formatDollars } from "./money.ts";
+import { endFinishedSpecials, suggestSpecial } from "./freshness.ts";
+import { formatDay } from "./orders.ts";
 import { planSimple, planSmart, itemState, type PlannedPo } from "./planner.ts";
 import { describeLine, isApprovedSupplier, makeLine, needsApproval, sendPo, shippingFor } from "./purchasing.ts";
 import { addLog, type AgentRun, type PurchaseOrder, type World } from "./sim.ts";
@@ -55,6 +57,11 @@ function route(world: World, po: PurchaseOrder): "sent" | "awaiting" {
   return "sent";
 }
 
+/** The supplier lets us know about a delay the day after the order goes out. */
+function delayAnnounced(world: World, po: PurchaseOrder): boolean {
+  return po.arrivalDay > po.promisedDay && world.day >= (po.sentDay ?? po.createdDay) + 1;
+}
+
 /**
  * Late deliveries: note them once, and if we'll run out before they show up, draft a backup
  * order from another approved supplier. A backup duplicates an open order, so it always waits
@@ -62,27 +69,36 @@ function route(world: World, po: PurchaseOrder): "sent" | "awaiting" {
  */
 export function checkLateDeliveries(world: World): PurchaseOrder[] {
   const backups: PurchaseOrder[] = [];
-  const late = world.purchaseOrders.filter((po) => po.status === "sent" && po.promisedDay <= world.day && !po.isBackup);
+  const late = world.purchaseOrders.filter((po) => po.status === "sent" && !po.isBackup && (po.promisedDay <= world.day || delayAnnounced(world, po)));
   for (const po of late) {
+    const supplierName = getSupplier(po.supplierId).name;
+    const known = delayAnnounced(world, po);
     if (po.lateNoticeDay === undefined) {
       po.lateNoticeDay = world.day;
-      addLog(world, "agent", `${po.id} from ${getSupplier(po.supplierId).name} is late`, `It was due ${po.promisedDay === world.day ? "this morning" : `${world.day - po.promisedDay + 1} days ago`} and hasn't arrived.`, po.id);
+      addLog(world, "agent", `${po.id} from ${supplierName} is late`, known
+        ? `${supplierName} says it will arrive ${po.arrivalDay - po.promisedDay} days late: ${formatDay(po.arrivalDay)} instead of ${formatDay(po.promisedDay)}.`
+        : `It was due ${po.promisedDay === world.day ? "this morning" : `${world.day - po.promisedDay + 1} days ago`} and hasn't arrived.`, po.id);
     }
+    const daysUntilArrival = known ? po.arrivalDay - world.day : 2;
     const alreadyBackedUp = world.purchaseOrders.some((other) => other.isBackup && other.backupFor === po.id && other.status !== "rejected");
     if (alreadyBackedUp) continue;
-    const atRisk = po.lines.filter((line) => itemState(world, getIngredient(line.ingredientId)).daysLeft < 3);
+    const alternatives = SUPPLIERS.filter((supplier) => supplier.approved && supplier.id !== po.supplierId).sort((a, b) => a.leadDays - b.leadDays);
+    // At risk: would run out before the late order shows up (with a day to spare).
+    const atRisk = po.lines.filter((line) => itemState(world, getIngredient(line.ingredientId)).daysLeft < daysUntilArrival + 1);
     if (atRisk.length === 0) continue;
-    const backup = SUPPLIERS
-      .filter((supplier) => supplier.approved && supplier.id !== po.supplierId && atRisk.every((line) => offerFor(supplier, line.ingredientId)))
-      .sort((a, b) => a.leadDays - b.leadDays)[0];
+    const backup = alternatives.find((supplier) => atRisk.every((line) => offerFor(supplier, line.ingredientId)))
+      ?? alternatives.find((supplier) => atRisk.some((line) => offerFor(supplier, line.ingredientId)));
     if (!backup) {
       addLog(world, "agent", `No backup supplier for ${po.id}`, `${list(atRisk.map((line) => getIngredient(line.ingredientId).name.toLowerCase()))} may run out. Flagged for you.`, po.id);
       continue;
     }
-    const lines = atRisk.map((line) => {
+    const uncovered = atRisk.filter((line) => !offerFor(backup, line.ingredientId));
+    if (uncovered.length > 0) addLog(world, "agent", `No backup supplier for some of ${po.id}`, `${list(uncovered.map((line) => getIngredient(line.ingredientId).name.toLowerCase()))} may run out. Flagged for you.`, po.id);
+    const lines = atRisk.filter((line) => offerFor(backup, line.ingredientId)).map((line) => {
       const state = itemState(world, getIngredient(line.ingredientId));
       const offer = offerFor(backup, line.ingredientId)!;
-      const packs = Math.max(1, Math.ceil((state.usage * (backup.leadDays + SETTINGS.safetyDays + 2) - state.onHand) / offer.packSize));
+      // Enough to bridge until the late order arrives, plus safety stock.
+      const packs = Math.max(1, Math.ceil((state.usage * (daysUntilArrival + SETTINGS.safetyDays) - state.onHand) / offer.packSize));
       return makeLine(world, backup.id, line.ingredientId, packs, "backup");
     });
     const subtotalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
@@ -92,7 +108,7 @@ export function checkLateDeliveries(world: World): PurchaseOrder[] {
     const created = createPo(world, {
       supplierId: backup.id, lines, subtotalCents, shippingCents, totalCents: subtotalCents + shippingCents,
       reasons: [
-        { rule: "Late delivery", text: `${po.id} from ${getSupplier(po.supplierId).name} is late and ${names} will run out in about ${soonest < 1 ? "under a day" : `${soonest.toFixed(1)} days`}.` },
+        { rule: "Late delivery", text: `${po.id} from ${supplierName} is late${known ? ` (now due ${formatDay(po.arrivalDay)})` : ""}, and ${names} will run out in about ${soonest < 1 ? "under a day" : `${soonest.toFixed(1)} days`}.` },
         { rule: "Backup order", text: `${backup.name} can deliver in ${backup.leadDays} days. Enough to bridge the gap until the late order arrives.` },
         { rule: "Human in charge", text: "This duplicates an open order, which the agent may not send on its own. It needs your approval." },
       ],
@@ -106,6 +122,7 @@ export function checkLateDeliveries(world: World): PurchaseOrder[] {
 
 export function runAgent(world: World): AgentRun {
   const logStart = world.log.length;
+  endFinishedSpecials(world);
   const backups = checkLateDeliveries(world);
   const plan = world.policy === "smart" ? planSmart(world) : planSimple(world);
   const lowNames = plan.atReorderPoint.map((id) => getIngredient(id).name.toLowerCase());
@@ -123,6 +140,14 @@ export function runAgent(world: World): AgentRun {
   const routed = [...backups, ...created].map((po) => route(world, po));
   const awaiting = [...backups, ...created].filter((po) => po.status === "awaiting");
   const sentCount = routed.filter((result) => result === "sent").length;
+
+  // Freshness: suggest a "use it up" special when a batch is likely to expire before we use it.
+  const previous = world.specialSuggestion;
+  const suggestion = world.specialFor ? null : suggestSpecial(world);
+  world.specialSuggestion = suggestion;
+  if (suggestion && previous?.batchId !== suggestion.batchId) {
+    addLog(world, "agent", `Suggests a “use it up” special before ${formatDay(suggestion.expiresDay)}`, suggestion.text);
+  }
 
   const run: AgentRun = {
     day: world.day,

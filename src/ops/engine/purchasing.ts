@@ -2,6 +2,7 @@
 import { SETTINGS, SUPPLIERS, getIngredient, getSupplier, offerFor, type PriceTier, type Supplier, type SupplierOffer } from "./data.ts";
 import { formatQty } from "./inventory.ts";
 import { formatCents } from "./money.ts";
+import { invoiceAndMatch, simulateReceipt } from "./match.ts";
 import { isOpenPo } from "./pantry.ts";
 import { addLog, newBatch, type PoLine, type PurchaseOrder, type World } from "./sim.ts";
 
@@ -97,7 +98,7 @@ export function checkGuardrails(world: World): GuardrailViolation[] {
   const violations: GuardrailViolation[] = [];
   for (const po of world.purchaseOrders) {
     if (!isApprovedSupplier(po.supplierId)) violations.push({ poId: po.id, rule: "approved-suppliers", detail: `${po.supplierId} isn't approved` });
-    const sentWithoutApproval = po.needsApproval && !po.approvedBy && ["approved", "sent", "received", "invoiced", "matched", "flagged"].includes(po.status);
+    const sentWithoutApproval = po.needsApproval && !po.approvedBy && ["approved", "sent", "received", "invoiced", "matched", "flagged", "disputed"].includes(po.status);
     if (sentWithoutApproval) violations.push({ poId: po.id, rule: "approval", detail: "sent without approval" });
   }
   const open = world.purchaseOrders.filter(isOpenPo);
@@ -156,7 +157,7 @@ export function rejectPo(world: World, poId: string): boolean {
 export function receiveDeliveries(world: World): PurchaseOrder[] {
   const arriving = world.purchaseOrders.filter((po) => po.status === "sent" && po.arrivalDay <= world.day);
   for (const po of arriving) {
-    po.receipt = po.receipt ?? po.lines.map((line) => ({ ingredientId: line.ingredientId, packs: line.packs }));
+    po.receipt = po.receipt ?? simulateReceipt(world, po);
     for (const received of po.receipt) {
       const line = po.lines.find((candidate) => candidate.ingredientId === received.ingredientId);
       if (!line || received.packs <= 0) continue;
@@ -165,7 +166,10 @@ export function receiveDeliveries(world: World): PurchaseOrder[] {
     po.status = "received";
     po.receivedDay = world.day;
     const late = po.arrivalDay > po.promisedDay ? ` (${po.arrivalDay - po.promisedDay} days late)` : "";
-    addLog(world, "system", `${po.id} arrived from ${getSupplier(po.supplierId).name}${late}`, po.lines.map(describeLine).join("; "), po.id);
+    const short = po.lines.filter((line) => (po.receipt?.find((item) => item.ingredientId === line.ingredientId)?.packs ?? 0) < line.packs);
+    const shortNote = short.length > 0 ? ` Short: ${short.map((line) => getIngredient(line.ingredientId).name.toLowerCase()).join(", ")}.` : "";
+    addLog(world, "system", `${po.id} arrived from ${getSupplier(po.supplierId).name}${late}`, `${po.lines.map(describeLine).join("; ")}.${shortNote}`, po.id);
+    invoiceAndMatch(world, po);
   }
   return arriving;
 }

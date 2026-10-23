@@ -3,6 +3,8 @@ import { BellRing, CloudSun, Pause, Play, RotateCcw, SkipForward, Sun, Thermomet
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
 import { formatDaysLeft, needsAttention, statusLabel, summarizePantry } from "../engine/pantry";
+import { startSpecial } from "../engine/freshness";
+import { resolveInvoice } from "../engine/match";
 import { approvePo, rejectPo } from "../engine/purchasing";
 import { SETTINGS } from "../engine/data";
 import { createScenarioWorld, getScenario, SCENARIOS } from "../engine/scenarios";
@@ -11,6 +13,9 @@ import type { PurchaseOrder, World } from "../engine/sim";
 import { AgentTrace } from "./AgentPanel";
 import { AuditLog } from "./AuditLog";
 import { ComparePanel } from "./ComparePanel";
+import { FreshnessPanel, SpecialCard } from "./FreshnessPanel";
+import { InvoicePanel } from "./InvoicePanel";
+import { ProfitPanel } from "./ProfitPanel";
 import { OrdersFeed } from "./OrdersFeed";
 import { Pantry, TinDetail, type Drain } from "./Pantry";
 import { PoCard } from "./PoCard";
@@ -18,7 +23,7 @@ import "../ops.css";
 
 const DEFAULT_SEED = 2026;
 type Speed = "slow" | "fast" | "instant";
-type Tab = "today" | "orders" | "log" | "compare";
+type Tab = "today" | "orders" | "log" | "compare" | "freshness" | "profit" | "invoices";
 const SPEED_MS: Record<Exclude<Speed, "instant">, number> = { slow: 650, fast: 140 };
 const SPEED_LABEL: Record<Speed, string> = { slow: "Slow", fast: "Fast", instant: "Instant" };
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -26,6 +31,9 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "orders", label: "Purchase orders" },
   { id: "log", label: "Audit log" },
   { id: "compare", label: "Simple vs smarter" },
+  { id: "freshness", label: "Freshness" },
+  { id: "profit", label: "Drink profits" },
+  { id: "invoices", label: "Invoice check" },
 ];
 
 function usePrefersReducedMotion() {
@@ -43,6 +51,13 @@ function WeatherIcon({ tempF }: { tempF: number }) {
   if (tempF >= 90) return <Thermometer size={18} aria-hidden="true" />;
   if (tempF >= 80) return <Sun size={18} aria-hidden="true" />;
   return <CloudSun size={18} aria-hidden="true" />;
+}
+
+/** The sentences of a log entry that mention what the scenario is about (or the first one). */
+function relevantSentences(detail: string, pattern: RegExp): string {
+  const sentences = detail.split(/(?<=\.)\s+/);
+  const matching = sentences.filter((sentence) => pattern.test(sentence));
+  return (matching.length > 0 ? matching : sentences).slice(0, 2).join(" ");
 }
 
 const awaitingIds = (world: World) => world.purchaseOrders.filter((po) => po.status === "awaiting").map((po) => po.id);
@@ -153,6 +168,8 @@ export default function OpsPage() {
 
   const approve = (id: string) => { update((next) => { approvePo(next, id); }); setNotice(null); };
   const reject = (id: string) => { update((next) => { rejectPo(next, id); }); setNotice(null); };
+  const runSpecial = () => update((next) => { if (next.specialSuggestion) { startSpecial(next, next.specialSuggestion); next.specialSuggestion = null; } });
+  const resolve = (id: string, decision: "accept" | "dispute") => update((next) => { resolveInvoice(next, id, decision); });
 
   // Clear the drain highlight once the signature animation has played.
   useEffect(() => {
@@ -166,6 +183,8 @@ export default function OpsPage() {
   const scenario = getScenario(scenarioId);
   const byNewest = [...world.purchaseOrders].reverse();
   const recentPos = byNewest.filter((po) => po.status !== "awaiting").slice(0, 3);
+  const flaggedCount = world.purchaseOrders.filter((po) => po.status === "flagged").length;
+  const responses = scenario.response ? world.log.filter((entry) => entry.actor !== "system" && scenario.response!.test(`${entry.title} ${entry.detail ?? ""}`)).slice(-3).reverse() : [];
 
   return (
     <div className={`ops-page ${reducedMotion ? "reduce-motion" : ""}`}>
@@ -212,7 +231,17 @@ export default function OpsPage() {
         </div>
       </div>
 
-      {scenarioId !== "normal" && <p className="scenario-banner" role="status"><strong>{scenario.name}.</strong> {scenario.banner}</p>}
+      {scenarioId !== "normal" && (
+        <div className="scenario-banner" role="status">
+          <p><strong>{scenario.name}.</strong> {scenario.banner}</p>
+          {responses.length > 0 ? (
+            <div className="scenario-response">
+              <p className="ops-eyebrow">How the agent is responding</p>
+              <ul>{responses.map((entry) => <li key={entry.id}><strong>{formatDay(entry.day)}:</strong> {entry.title}. <span>{relevantSentences(entry.detail ?? "", scenario.response!)}</span></li>)}</ul>
+            </div>
+          ) : <p className="ops-muted">Run a day to see how the agent responds.</p>}
+        </div>
+      )}
       {notice && <div className="ops-notice" role="status"><BellRing size={18} /><span>{notice}</span><button onClick={() => setNotice(null)} aria-label="Dismiss"><X size={16} /></button></div>}
 
       <nav className="ops-tabs" aria-label="Demo sections">
@@ -220,6 +249,8 @@ export default function OpsPage() {
           <button key={option.id} className={tab === option.id ? "is-selected" : ""} aria-current={tab === option.id ? "page" : undefined} onClick={() => setTab(option.id)}>
             {option.label}
             {option.id === "orders" && awaiting.length > 0 && <span className="tab-badge">{awaiting.length}</span>}
+            {option.id === "invoices" && flaggedCount > 0 && <span className="tab-badge">{flaggedCount}</span>}
+            {option.id === "freshness" && world.specialSuggestion && <span className="tab-badge">1</span>}
           </button>
         ))}
       </nav>
@@ -258,6 +289,7 @@ export default function OpsPage() {
           </section>
 
           <aside className="ops-side">
+            {(world.specialSuggestion || world.specialFor) && <SpecialCard suggestion={world.specialSuggestion} world={world} onStart={runSpecial} />}
             <section className="ops-panel" aria-labelledby="attention-title">
               <h2 id="attention-title" className="ops-side-title">Needs attention</h2>
               {attention.length === 0 ? <p className="ops-muted">Everything is comfortably stocked.</p> : (
@@ -316,6 +348,27 @@ export default function OpsPage() {
         <section className="ops-panel" aria-labelledby="compare-title">
           <div className="ops-panel-head"><div><p className="ops-eyebrow">Same month, two ways to order</p><h2 id="compare-title">Simple vs <em>smarter.</em></h2></div></div>
           <ComparePanel seed={seed} scenarioId={scenarioId} />
+        </section>
+      )}
+
+      {tab === "freshness" && (
+        <section className="ops-panel" aria-labelledby="fresh-title">
+          <div className="ops-panel-head"><div><p className="ops-eyebrow">Use it before it goes to waste</p><h2 id="fresh-title">Freshness <em>timeline.</em></h2></div></div>
+          <FreshnessPanel world={world} onStart={runSpecial} />
+        </section>
+      )}
+
+      {tab === "profit" && (
+        <section className="ops-panel" aria-labelledby="profit-title">
+          <div className="ops-panel-head"><div><p className="ops-eyebrow">What each drink costs to make</p><h2 id="profit-title">Profit per <em>drink.</em></h2></div></div>
+          <ProfitPanel world={world} />
+        </section>
+      )}
+
+      {tab === "invoices" && (
+        <section className="ops-panel" aria-labelledby="invoice-title">
+          <div className="ops-panel-head"><div><p className="ops-eyebrow">Ordered = arrived = billed?</p><h2 id="invoice-title">Invoice <em>check.</em></h2></div></div>
+          <InvoicePanel world={world} onResolve={resolve} />
         </section>
       )}
 

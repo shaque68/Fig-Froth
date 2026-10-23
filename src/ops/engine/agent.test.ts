@@ -186,9 +186,11 @@ test("approving sends the order; it arrives after the lead time and refills the 
   const before = onHand(world.stock["ceremonial-matcha"]);
   world.day = po.arrivalDay;
   receiveDeliveries(world);
-  assert.equal(po.status, "received");
+  assert.ok(["matched", "flagged"].includes(po.status), "the invoice is checked on arrival");
   const ordered = po.lines.find((line) => line.ingredientId === "ceremonial-matcha")!;
-  assert.equal(onHand(world.stock["ceremonial-matcha"]), before + ordered.packs * ordered.packSize);
+  const received = po.receipt!.find((line) => line.ingredientId === "ceremonial-matcha")!;
+  assert.ok(received.packs >= ordered.packs - 1);
+  assert.equal(onHand(world.stock["ceremonial-matcha"]), before + received.packs * ordered.packSize);
   assert.ok(world.log.some((entry) => entry.actor === "you" && entry.poId === po.id));
 });
 

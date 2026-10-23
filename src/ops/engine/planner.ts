@@ -175,12 +175,15 @@ export function planSmart(world: World): Plan {
       return { supplier, packs, wanted, landed: landedCost(world, drafts, supplier, state.ingredient.id, packs) };
     }).sort((a, b) => a.landed - b.landed || (a.supplier.id === state.home.id ? -1 : 1));
     const choice = options[0];
+    const bookedSoon = bookedDemand(world, state.ingredient.id, state.home.leadDays + SETTINGS.safetyDays);
     const reasons: PoReason[] = [{
       rule: "Low stock",
-      text: `${state.ingredient.name} is down to ${formatQty(state.ingredient.id, state.onHand)} (${days(state.daysLeft)} left), at or below its reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`,
+      text: bookedSoon > 0 && state.onHand + state.onOrder > state.reorderPoint
+        ? `${state.ingredient.name}: ${formatQty(state.ingredient.id, state.onHand)} on the shelf, but after the ${formatQty(state.ingredient.id, bookedSoon)} the booked order needs, that's below the reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`
+        : `${state.ingredient.name}: down to ${formatQty(state.ingredient.id, state.onHand)} (${days(state.daysLeft)} left), at or below the reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`,
     }];
     const booked = bookedDemand(world, state.ingredient.id, choice.supplier.leadDays + SETTINGS.safetyDays + choice.supplier.orderCycleDays);
-    if (booked > 0) reasons.push({ rule: "Known orders", text: `Includes ${formatQty(state.ingredient.id, booked)} for an upcoming booked order.` });
+    if (booked > 0) reasons.push({ rule: "Known orders", text: `Includes ${formatQty(state.ingredient.id, booked)} of ${state.ingredient.name.toLowerCase()} for an upcoming booked order.` });
     if (choice.packs < choice.wanted) {
       reasons.push({ rule: "Freshness", text: `Ordered ${plural(choice.packs, "pack")} instead of ${choice.wanted}: more would spoil before we could use it.` });
     }
@@ -209,6 +212,16 @@ export function planSmart(world: World): Plan {
       if (state.home.id !== supplier.id || state.openPoId || inDraft(state.ingredient.id) || atReorderPoint(world, state)) continue;
       if (!hitsReorderPointSoon(world, state)) continue;
       const offer = offerFor(supplier, state.ingredient.id)!;
+      const unitPrice = (candidate: Supplier) => {
+        const candidateOffer = offerFor(candidate, state.ingredient.id)!;
+        return packPriceCents(world, candidate.id, candidateOffer, 1) / candidateOffer.packSize;
+      };
+      const cheaper = SUPPLIERS.filter((candidate) => candidate.approved && candidate.id !== supplier.id && offerFor(candidate, state.ingredient.id))
+        .find((candidate) => unitPrice(candidate) < unitPrice(supplier) * 0.95);
+      if (cheaper) {
+        plan.notes.push(`Didn't add ${state.ingredient.name.toLowerCase()} to the ${supplier.name} order early: it's ${Math.round((1 - unitPrice(cheaper) / unitPrice(supplier)) * 100)}% cheaper from ${cheaper.name} right now.`);
+        continue;
+      }
       const cap = freshnessCap(world, state, supplier);
       let packs = packsFor(targetQty(world, state, supplier), offer.packSize);
       if (cap !== null) packs = Math.min(packs, Math.floor(cap / offer.packSize));
@@ -222,7 +235,10 @@ export function planSmart(world: World): Plan {
     }
   }
 
-  // Rule 4: move up to a bulk price tier only if the extra stock gets used before it expires.
+  // Rule 4: move up to a bulk price tier only if the extra stock gets used before it expires,
+  // and only if the extra spend leaves enough of this week's cash cap for what we'll still need.
+  const reserve = expectedSpendRestOfWeek(world, states);
+  let bulkRoom = cashLeftThisWeek(world) - reserve - [...drafts.values()].reduce((sum, draft) => sum + draftSubtotal(world, draft), 0);
   for (const draft of drafts.values()) {
     const supplier = getSupplier(draft.supplierId);
     for (const line of draft.lines) {
@@ -237,6 +253,12 @@ export function planSmart(world: World): Plan {
       const current = packPriceCents(world, supplier.id, offer, line.packs);
       const bulk = packPriceCents(world, supplier.id, offer, tier.minPacks);
       const saving = (current - bulk) * tier.minPacks;
+      const extraSpend = bulk * tier.minPacks - current * line.packs;
+      if (extraSpend > bulkRoom) {
+        plan.notes.push(`Skipped the bulk price on ${state.ingredient.name.toLowerCase()}: the extra ${formatCents(extraSpend)} would leave too little of this week's cash cap for what we'll still need.`);
+        continue;
+      }
+      bulkRoom -= extraSpend;
       const usedWithin = Math.ceil((state.onHand + state.onOrder + total) / Math.max(1, state.usage));
       const freshness = state.ingredient.freshnessDays ? `, before it expires` : "";
       line.reasons.push({ rule: "Bulk price", text: `Bought ${tier.minPacks} instead of ${line.packs} to get the bulk price (${formatCents(bulk)} vs ${formatCents(current)} each), saving ${formatCents(saving)}. It will all be used within about ${usedWithin} days${freshness}.`, savingsCents: saving });
@@ -346,6 +368,16 @@ export function planSmart(world: World): Plan {
     plan.pos.push(po);
   }
   return plan;
+}
+
+/** Roughly what the rest of this week's usage will cost to replace, at base prices. */
+export function expectedSpendRestOfWeek(world: World, states: ItemState[]): number {
+  const daysLeftInWeek = 6 - (world.day % 7);
+  return Math.round(states.reduce((sum, state) => {
+    const offer = offerFor(state.home, state.ingredient.id);
+    if (!offer) return sum;
+    return sum + (state.usage * daysLeftInWeek * packPriceCents(world, state.home.id, offer, 1, "base")) / offer.packSize;
+  }, 0));
 }
 
 function inDraftFor(draft: DraftPo, ingredientId: string): boolean {

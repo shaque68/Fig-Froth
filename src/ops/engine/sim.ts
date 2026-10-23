@@ -57,7 +57,7 @@ export type ScenarioEffects = {
 };
 
 // Purchase orders are defined here (not in the agent) so the World stays one plain type.
-export type PoStatus = "draft" | "awaiting" | "approved" | "sent" | "received" | "invoiced" | "matched" | "flagged" | "rejected";
+export type PoStatus = "draft" | "awaiting" | "approved" | "sent" | "received" | "invoiced" | "matched" | "flagged" | "disputed" | "rejected";
 
 export type PoLine = {
   ingredientId: string;
@@ -137,6 +137,10 @@ export type World = {
   effects: ScenarioEffects;
   /** "Use it up" specials currently running: drink id → popularity boost. */
   specials: Record<string, number>;
+  /** The special that's running and the batch it's meant to use up. */
+  specialFor?: { drinkId: string; batchId: string; untilDay: number };
+  /** The agent's latest "use it up" suggestion, if any. */
+  specialSuggestion?: { drinkId: string; ingredientId: string; batchId: string; expiresDay: number; leftover: number; savedQty: number; savedCents: number; text: string } | null;
   agentRuns: AgentRun[];
   counters: { po: number; batch: number; log: number };
 };

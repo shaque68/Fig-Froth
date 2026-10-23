@@ -136,6 +136,7 @@ export const SUPPLIERS: Supplier[] = [
       offer("oat-milk", 5676, "case of 6 cartons", [[1, 2300], [4, 2150]]),
       offer("cold-cups", 50, "sleeve of 50", [[1, 1150]]),
       offer("lids", 100, "sleeve of 100", [[1, 1450]]),
+      offer("straws", 250, "box of 250", [[1, 1800]]),
     ],
   },
   {
@@ -170,7 +171,7 @@ export const SETTINGS = {
   topUpHorizonDays: 14,
   oatShare: 0.35,
   approvalThresholdCents: 30000,
-  weeklyCashCapCents: 260000,
+  weeklyCashCapCents: 300000,
 };
 
 /** Starting shelf, written as batches: amount on hand and how many days ago it arrived. */
