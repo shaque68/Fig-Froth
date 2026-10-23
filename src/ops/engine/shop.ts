@@ -1,8 +1,13 @@
 // The full shop loop used by the UI and the comparison: the simulation plus the day hooks.
+import { runAgent } from "./agent.ts";
 import { SETTINGS } from "./data.ts";
+import { receiveDeliveries } from "./purchasing.ts";
 import { advanceDay, nextOrder, runUntil, type DayHooks, type ServedOrder, type World } from "./sim.ts";
 
-export const shopHooks: DayHooks = {};
+export const shopHooks: DayHooks = {
+  onOpen: (world) => { receiveDeliveries(world); },
+  onClose: (world) => { runAgent(world); },
+};
 
 export function stepNextOrder(world: World): ServedOrder {
   return nextOrder(world, shopHooks);

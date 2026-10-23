@@ -118,9 +118,9 @@ export const SUPPLIERS: Supplier[] = [
     id: "little-meadow", name: "Little Meadow Dairy", approved: true, leadDays: 1, shippingCents: 1200, freeShippingAtCents: 8000, orderCycleDays: 3,
     blurb: "Local dairy. Next-day delivery on milk and cream.",
     offers: [
-      offer("whole-milk", 3785, "1 gallon jug", [[1, 520], [12, 470]]),
+      offer("whole-milk", 3785, "gallon jug", [[1, 520], [12, 470]]),
       offer("oat-milk", 5676, "case of 6 cartons", [[1, 2400], [4, 2250]]),
-      offer("foam-cream", 1893, "half-gallon", [[1, 900], [8, 820]]),
+      offer("foam-cream", 1893, "half-gallon carton", [[1, 900], [8, 820]]),
     ],
   },
   {

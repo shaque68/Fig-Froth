@@ -91,12 +91,28 @@ export type PurchaseOrder = {
   sentDay?: number;
   receivedDay?: number;
   needsApproval: boolean;
+  /** Who let it go out: a person, the comparison run, or automatically (under the limit). */
+  approvedBy?: "you" | "same-day" | "auto";
   isBackup?: boolean;
+  /** For a backup order, the late order it covers. */
+  backupFor?: string;
   savings: { bulkCents: number; shippingAvoidedCents: number };
   receipt?: Array<{ ingredientId: string; packs: number }>;
   invoice?: { lines: Array<{ ingredientId: string; packs: number; packPriceCents: number }>; shippingCents: number; totalCents: number };
   matchNotes?: string[];
   lateNoticeDay?: number;
+};
+
+/** One pass of the restock agent's loop, summarized for the step trace. */
+export type AgentRun = {
+  day: number;
+  observe: string;
+  plan: string;
+  draft: string;
+  approval: string;
+  log: string;
+  poIds: string[];
+  awaitingIds: string[];
 };
 
 export type World = {
@@ -121,6 +137,7 @@ export type World = {
   effects: ScenarioEffects;
   /** "Use it up" specials currently running: drink id → popularity boost. */
   specials: Record<string, number>;
+  agentRuns: AgentRun[];
   counters: { po: number; batch: number; log: number };
 };
 
@@ -193,6 +210,7 @@ export function createWorld(seed: number, scenarioId = "normal", options: WorldO
     log: [],
     effects,
     specials: {},
+    agentRuns: [],
     counters: { po: 1000, batch: 0, log: 0 },
   };
 
