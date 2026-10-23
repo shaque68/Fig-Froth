@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { z } from "zod";
 import { initialProducts } from "../src/catalog.ts";
+import { registerOpsClaude } from "./ops-claude.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -231,6 +232,9 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
     return res.status(502).json({ error: "Couldn’t reach Square to start checkout. Please try again." });
   }
 });
+
+// Optional Claude mode for the Behind the Counter demo (off unless ANTHROPIC_API_KEY is set).
+registerOpsClaude(app);
 
 if (existsSync(distDirectory)) {
   app.use(express.static(distDirectory, { index: false, maxAge: "1h" }));

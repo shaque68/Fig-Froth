@@ -349,3 +349,21 @@
   .fresh-row { grid-template-columns: 1fr; gap: 4px; }
   .fresh-axis { display: none; }
 }
+
+/* Claude mode + writing */
+.ops-switch { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid #a9ad9e; background: #fdfcf8; color: var(--green); font-size: 15px; font-weight: 600; cursor: pointer; }
+.switch-track { position: relative; width: 36px; height: 20px; border-radius: 10px; background: #c9c7b8; }
+.switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+.ops-switch.is-on .switch-track { background: var(--green); }
+.ops-switch.is-on .switch-thumb { left: 18px; }
+.brief-panel { border-left: 4px solid #a88469; }
+.brief-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.brief-head .ops-side-title { margin: 0; }
+.brief-text { margin: 0 0 10px; font-size: 16px; }
+.source-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; color: #5f6358; background: #ecebe4; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.source-claude { color: #fff; background: #8a5a46; }
+.writer-notice { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid #c89a3c; background: #fbf5e6; font-size: 14px; }
+.writing-text { margin: 12px 0; font-size: 17px; white-space: pre-wrap; }
+.po-writing { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
+.po-writing .text-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.po-writing .text-link:hover { text-decoration: underline; }

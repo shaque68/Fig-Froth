@@ -137,3 +137,19 @@ test("smarter ordering never deliberately plans an unapproved supplier", () => {
   const plan = planSmart(world);
   assert.ok(plan.pos.every((po) => po.supplierId !== "bargain-leaf"));
 });
+
+test("demo-mode writing comes from templates and uses only engine numbers", async () => {
+  const { buildSnapshot, demoBrief, demoExplanation, demoSupplierMessage } = await import("./brief.ts");
+  const world = runPolicy(2026, "normal", "smart", 3);
+  const brief = demoBrief(world);
+  assert.match(brief, /^Good morning! It’s Thursday, June 4/);
+  assert.match(brief, /Yesterday we made \d+ drinks/);
+  const po = world.purchaseOrders[0];
+  assert.match(demoExplanation(po), new RegExp(`^This \\$[\\d,.]+ order to ${po.supplierId === "little-meadow" ? "Little Meadow Dairy" : ".+"}`));
+  const message = demoSupplierMessage(po);
+  assert.match(message, /^Hi .+ team,/);
+  assert.ok(!/@|\bphone\b|\d{3}-\d{4}/.test(message), "no contact details in the draft");
+  const snapshot = buildSnapshot(world, po.id);
+  assert.equal(snapshot.order?.id, po.id);
+  assert.ok(JSON.stringify(snapshot).length < 16000, "small enough to send to the local server");
+});

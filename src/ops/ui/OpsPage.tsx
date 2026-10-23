@@ -18,7 +18,8 @@ import { InvoicePanel } from "./InvoicePanel";
 import { ProfitPanel } from "./ProfitPanel";
 import { OrdersFeed } from "./OrdersFeed";
 import { Pantry, TinDetail, type Drain } from "./Pantry";
-import { PoCard } from "./PoCard";
+import { PoCard, type WriteRequest } from "./PoCard";
+import { MorningBrief, WritingDialog, writeText, type Written } from "./Writing";
 import "../ops.css";
 
 const DEFAULT_SEED = 2026;
@@ -62,12 +63,12 @@ function relevantSentences(detail: string, pattern: RegExp): string {
 
 const awaitingIds = (world: World) => world.purchaseOrders.filter((po) => po.status === "awaiting").map((po) => po.id);
 
-function PoGroup({ title, pos, today, onApprove, onReject, empty }: { title: string; pos: PurchaseOrder[]; today: number; onApprove?: (id: string) => void; onReject?: (id: string) => void; empty?: string }) {
+function PoGroup({ title, pos, today, onApprove, onReject, onWrite, empty }: { title: string; pos: PurchaseOrder[]; today: number; onApprove?: (id: string) => void; onReject?: (id: string) => void; onWrite?: WriteRequest; empty?: string }) {
   if (pos.length === 0 && !empty) return null;
   return (
     <section className="po-group">
       <h3 className="po-group-title">{title} <span>{pos.length}</span></h3>
-      {pos.length === 0 ? <p className="ops-muted">{empty}</p> : <div className="po-grid">{pos.map((po) => <PoCard key={po.id} po={po} today={today} onApprove={onApprove} onReject={onReject} />)}</div>}
+      {pos.length === 0 ? <p className="ops-muted">{empty}</p> : <div className="po-grid">{pos.map((po) => <PoCard key={po.id} po={po} today={today} onApprove={onApprove} onReject={onReject} onWrite={onWrite} />)}</div>}
     </section>
   );
 }
@@ -83,6 +84,8 @@ export default function OpsPage() {
   const [openTin, setOpenTin] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [notice, setNotice] = useState<string | null>(null);
+  const [claudeMode, setClaudeMode] = useState(false);
+  const [writing, setWriting] = useState<{ kind: "explain" | "supplier-message"; poId: string; written: Written | null } | null>(null);
   const reducedMotion = usePrefersReducedMotion();
 
   const tins = useMemo(() => summarizePantry(world), [world]);
@@ -171,6 +174,30 @@ export default function OpsPage() {
   const runSpecial = () => update((next) => { if (next.specialSuggestion) { startSpecial(next, next.specialSuggestion); next.specialSuggestion = null; } });
   const resolve = (id: string, decision: "accept" | "dispute") => update((next) => { resolveInvoice(next, id, decision); });
 
+  async function toggleClaude() {
+    if (claudeMode) {
+      setClaudeMode(false);
+      return;
+    }
+    try {
+      const status = await (await fetch("/api/ops/claude/status")).json() as { available: boolean };
+      if (status.available) {
+        setClaudeMode(true);
+        setNotice("Claude mode is on: Claude writes the brief, explanations, and supplier drafts. Every number still comes from the demo’s rules.");
+      } else {
+        setNotice("Claude mode needs ANTHROPIC_API_KEY in the local server’s .env. Staying in Demo mode.");
+      }
+    } catch {
+      setNotice("Couldn’t reach the local server, so Claude mode is unavailable. Staying in Demo mode.");
+    }
+  }
+
+  const write: WriteRequest = (kind, poId) => {
+    setWriting({ kind, poId, written: null });
+    const snapshotWorld = world;
+    void writeText(kind, snapshotWorld, claudeMode, poId).then((written) => setWriting((current) => (current && current.poId === poId && current.kind === kind ? { ...current, written } : current)));
+  };
+
   // Clear the drain highlight once the signature animation has played.
   useEffect(() => {
     if (!drain) return;
@@ -224,6 +251,9 @@ export default function OpsPage() {
               {SCENARIOS.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
             </select>
           </label>
+          <button className={`ops-switch ${claudeMode ? "is-on" : ""}`} role="switch" aria-checked={claudeMode} onClick={toggleClaude} title="Optional: Claude writes the explanations. Numbers always come from the demo's rules.">
+            <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span> Claude mode {claudeMode ? "on" : "off"}
+          </button>
           <form className="ops-reset" onSubmit={applySeed}>
             <label>Seed <input value={seedDraft} onChange={(event) => setSeedDraft(event.target.value)} inputMode="numeric" aria-label="Random seed" /></label>
             <button className="ops-button" type="submit"><RotateCcw size={16} /> Reset demo</button>
@@ -260,7 +290,7 @@ export default function OpsPage() {
           <section className="ops-panel approvals-panel" aria-labelledby="approvals-title">
             <div className="ops-panel-head"><div><p className="ops-eyebrow">Over the {formatDollars(SETTINGS.approvalThresholdCents)} limit, so a person decides</p><h2 id="approvals-title">Waiting for <em>you.</em></h2></div></div>
             <div className="approvals-layout">
-              <div className="po-grid">{awaiting.map((po) => <PoCard key={po.id} po={po} today={world.day} onApprove={approve} onReject={reject} defaultOpen />)}</div>
+              <div className="po-grid">{awaiting.map((po) => <PoCard key={po.id} po={po} today={world.day} onApprove={approve} onReject={reject} onWrite={write} defaultOpen />)}</div>
               <aside className="approval-help">
                 <h3>What happens next</h3>
                 <p><strong>Approve order:</strong> it’s sent to the supplier (simulated) and arrives after their delivery time. The tins refill when it does.</p>
@@ -289,6 +319,7 @@ export default function OpsPage() {
           </section>
 
           <aside className="ops-side">
+            <MorningBrief world={world} claudeMode={claudeMode} />
             {(world.specialSuggestion || world.specialFor) && <SpecialCard suggestion={world.specialSuggestion} world={world} onStart={runSpecial} />}
             <section className="ops-panel" aria-labelledby="attention-title">
               <h2 id="attention-title" className="ops-side-title">Needs attention</h2>
@@ -321,7 +352,7 @@ export default function OpsPage() {
           <AgentTrace run={lastRun} />
           {recentPos.length > 0 && <>
             <h3 className="po-group-title">Most recent orders</h3>
-            <div className="po-grid agent-latest">{recentPos.map((po) => <PoCard key={po.id} po={po} today={world.day} />)}</div>
+            <div className="po-grid agent-latest">{recentPos.map((po) => <PoCard key={po.id} po={po} today={world.day} onWrite={write} />)}</div>
           </>}
         </section>
       </>}
@@ -330,10 +361,10 @@ export default function OpsPage() {
         <section className="ops-panel" aria-labelledby="po-title">
           <div className="ops-panel-head"><div><p className="ops-eyebrow">Drafted by the agent · nothing is really sent</p><h2 id="po-title">Purchase <em>orders.</em></h2></div></div>
           {world.purchaseOrders.length === 0 && <p className="ops-muted">No purchase orders yet. Run a day and the agent will draft its first ones at closing.</p>}
-          <PoGroup title="Waiting for your approval" pos={awaiting} today={world.day} onApprove={approve} onReject={reject} />
-          <PoGroup title="On the way" pos={byNewest.filter((po) => po.status === "sent" || po.status === "approved")} today={world.day} />
-          <PoGroup title="Arrived" pos={byNewest.filter((po) => ["received", "invoiced", "matched", "flagged"].includes(po.status))} today={world.day} />
-          <PoGroup title="Not sent" pos={byNewest.filter((po) => po.status === "rejected")} today={world.day} />
+          <PoGroup title="Waiting for your approval" pos={awaiting} today={world.day} onApprove={approve} onReject={reject} onWrite={write} />
+          <PoGroup title="On the way" pos={byNewest.filter((po) => po.status === "sent" || po.status === "approved")} today={world.day} onWrite={write} />
+          <PoGroup title="Arrived" pos={byNewest.filter((po) => ["received", "invoiced", "matched", "flagged", "disputed"].includes(po.status))} today={world.day} onWrite={write} />
+          <PoGroup title="Not sent" pos={byNewest.filter((po) => po.status === "rejected")} today={world.day} onWrite={write} />
         </section>
       )}
 
@@ -371,6 +402,8 @@ export default function OpsPage() {
           <InvoicePanel world={world} onResolve={resolve} />
         </section>
       )}
+
+      {writing && <WritingDialog title={`${writing.kind === "explain" ? "Why" : "Message to the supplier for"} ${writing.poId}${writing.kind === "explain" ? "?" : ""}`} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}
 
       {selectedTin && <TinDetail tin={selectedTin} world={world} onClose={() => setOpenTin(null)} />}
     </div>

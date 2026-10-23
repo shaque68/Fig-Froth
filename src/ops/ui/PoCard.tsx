@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { Check, MessageSquareText, ScrollText, X } from "lucide-react";
 import { getIngredient, getSupplier } from "../engine/data";
 import { formatQty } from "../engine/inventory";
 import { formatCents } from "../engine/money";
@@ -28,7 +28,9 @@ function arrivalText(po: PurchaseOrder, today: number) {
   return `Due ${formatDay(po.promisedDay)}`;
 }
 
-export function PoCard({ po, today, onApprove, onReject, defaultOpen = false }: { po: PurchaseOrder; today: number; onApprove?: (id: string) => void; onReject?: (id: string) => void; defaultOpen?: boolean }) {
+export type WriteRequest = (kind: "explain" | "supplier-message", poId: string) => void;
+
+export function PoCard({ po, today, onApprove, onReject, onWrite, defaultOpen = false }: { po: PurchaseOrder; today: number; onApprove?: (id: string) => void; onReject?: (id: string) => void; onWrite?: WriteRequest; defaultOpen?: boolean }) {
   const supplier = getSupplier(po.supplierId);
   const totalSavings = po.savings.bulkCents + po.savings.shippingAvoidedCents;
   return (
@@ -75,6 +77,12 @@ export function PoCard({ po, today, onApprove, onReject, defaultOpen = false }: 
           ))}
         </ul>
       </details>
+      {onWrite && (
+        <div className="po-writing">
+          <button className="text-link" onClick={() => onWrite("explain", po.id)}><ScrollText size={15} /> Explain in plain words</button>
+          <button className="text-link" onClick={() => onWrite("supplier-message", po.id)}><MessageSquareText size={15} /> Draft supplier message</button>
+        </div>
+      )}
       {po.matchNotes && po.matchNotes.length > 0 && (
         <ul className={`po-match ${po.status === "flagged" ? "is-flagged" : ""}`}>
           {po.matchNotes.map((note, index) => <li key={index}>{note}</li>)}
