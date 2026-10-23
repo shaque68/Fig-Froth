@@ -8,7 +8,7 @@
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "start": "node server/index.js",
-    "test": "node --test server/*.test.js"
+    "test": "node --test server/*.test.js src/ops/engine/*.test.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.4.1",
