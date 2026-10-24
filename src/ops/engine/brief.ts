@@ -11,7 +11,7 @@ import type { PurchaseOrder, World } from "./sim.ts";
 
 export type WritingKind = "brief" | "explain" | "supplier-message";
 
-const daysText = (days: number) => (!Number.isFinite(days) ? "plenty" : days < 1 ? "under a day" : `${days.toFixed(1).replace(/\.0$/, "")} days`);
+const daysText = (days: number) => (!Number.isFinite(days) ? "plenty of stock" : days < 1 ? "under a day of stock" : `${days.toFixed(1).replace(/\.0$/, "")} days of stock`);
 
 /** A compact, plain-data picture of the shop for writing. Everything in it was computed by the engine. */
 export function buildSnapshot(world: World, poId?: string) {
@@ -37,7 +37,7 @@ export function buildSnapshot(world: World, poId?: string) {
     scenario: getScenario(world.scenarioId).name,
     approvalLimit: formatDollars(SETTINGS.approvalThresholdCents),
     yesterday: yesterday ? { orders: yesterday.orders, drinksMade: yesterday.drinksMade, drinksMissed: yesterday.drinksMissed, sales: formatCents(yesterday.revenueCents), thrownOut: formatCents(yesterday.wasteCents) } : null,
-    needsAttention: needsAttention(tins).slice(0, 5).map((tin) => ({ item: tin.ingredient.name, onShelf: formatQty(tin.ingredient.id, tin.onHand), daysLeft: daysText(tin.daysLeft), status: statusLabel(tin) })),
+    needsAttention: needsAttention(tins).slice(0, 5).map((tin) => ({ item: tin.ingredient.name, onShelf: formatQty(tin.ingredient.id, tin.onHand), daysOfStock: daysText(tin.daysLeft), useBy: tin.nextUseByDay === null ? null : formatDay(tin.nextUseByDay), status: statusLabel(tin) })),
     waitingForApproval: world.purchaseOrders.filter((order) => order.status === "awaiting").map(describePo),
     arrivingToday: world.purchaseOrders.filter((order) => order.receivedDay === world.day).map((order) => `${order.id} from ${getSupplier(order.supplierId).name}`),
     invoicesToReview: world.purchaseOrders.filter((order) => order.status === "flagged").map((order) => ({ id: order.id, notes: order.matchNotes ?? [] })),
@@ -63,7 +63,7 @@ export function demoBrief(world: World): string {
   }
   if (snapshot.arrivingToday.length > 0) parts.push(`Arrived this morning: ${list(snapshot.arrivingToday)}.`);
   const urgent = snapshot.needsAttention.filter((item) => item.status !== "Reorder soon").slice(0, 3);
-  if (urgent.length > 0) parts.push(`Keep an eye on ${list(urgent.map((item) => `${item.item.toLowerCase()} (${item.daysLeft} left, ${item.status.toLowerCase()})`))}.`);
+  if (urgent.length > 0) parts.push(`Keep an eye on ${list(urgent.map((item) => `${item.item.toLowerCase()} (${item.daysOfStock}, ${item.status.toLowerCase()})`))}.`);
   else parts.push("Nothing on the shelf is urgent.");
   if (snapshot.invoicesToReview.length > 0) parts.push(`${snapshot.invoicesToReview.length === 1 ? "One invoice doesn’t" : `${snapshot.invoicesToReview.length} invoices don’t`} match what we ordered and received.`);
   if (snapshot.special) parts.push("There’s a “use it up” special suggestion on the Freshness tab.");

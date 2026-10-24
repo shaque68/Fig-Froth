@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { offerFor, SHELVES } from "../engine/data";
 import { formatQty } from "../engine/inventory";
-import { formatClock, formatDay } from "../engine/orders";
-import { explainReorderPoint, formatDaysLeft, shelfCapacity, statusLabel, type TinSummary } from "../engine/pantry";
+import { formatClock, formatDay, formatShortDate } from "../engine/orders";
+import { explainReorderPoint, formatDaysLeft, formatStockDays, shelfCapacity, statusLabel, type TinSummary } from "../engine/pantry";
 import type { World } from "../engine/sim";
 import { TinGraphic } from "./Tin";
 
@@ -13,17 +13,23 @@ function statusClass(tin: TinSummary) {
   return `status-${tin.status}${tin.onOrder > 0 && tin.status !== "ok" ? " status-on-order" : ""}`;
 }
 
+/** Show the use-by date on the tin only when a batch expires within a week. */
+function useBySoon(tin: TinSummary, world: World): boolean {
+  return tin.nextUseByDay !== null && tin.nextUseByDay - world.day <= 7;
+}
+
 function TinCard({ tin, world, drain, drainIndex, onOpen }: { tin: TinSummary; world: World; drain: Drain | null; drainIndex?: number; onOpen: () => void }) {
   const capacity = Math.max(1, shelfCapacity(world, tin.ingredient));
   const drained = drain && drainIndex !== undefined ? drain.usage[tin.ingredient.id] : undefined;
   return (
-    <button className={`tin-card ${statusClass(tin)} ${drained ? "is-draining" : ""}`} onClick={onOpen} aria-label={`${tin.ingredient.name}: ${formatDaysLeft(tin.daysLeft)} left, ${statusLabel(tin)}. Show details.`}>
+    <button className={`tin-card ${statusClass(tin)} ${drained ? "is-draining" : ""}`} onClick={onOpen} aria-label={`${tin.ingredient.name}: ${formatStockDays(tin.daysLeft)}${useBySoon(tin, world) ? `, use by ${formatDay(tin.nextUseByDay!)}` : ""}, ${statusLabel(tin)}. Show details.`}>
       <span className="tin-art">
         <TinGraphic id={tin.ingredient.id} vessel={tin.ingredient.vessel} color={tin.ingredient.color} fill={tin.fill} reorderLine={tin.reorderPoint / capacity} drainIndex={drainIndex} />
         {drained && drain && <span key={drain.key} className="drain-label" style={{ animationDelay: `${(drainIndex ?? 0) * 110}ms` }}>−{formatQty(tin.ingredient.id, drained)}</span>}
       </span>
       <span className="tin-name">{tin.ingredient.name}</span>
-      <span className="tin-days"><strong>{formatDaysLeft(tin.daysLeft)}</strong>{Number.isFinite(tin.daysLeft) && tin.daysLeft >= 1 ? " left" : ""}</span>
+      <span className="tin-days">{Number.isFinite(tin.daysLeft) && tin.daysLeft >= 1 ? <><strong>{formatDaysLeft(tin.daysLeft)}</strong><small>of stock</small></> : <strong>{formatStockDays(tin.daysLeft)}</strong>}</span>
+      {useBySoon(tin, world) && <span className="tin-useby">Use by {formatShortDate(tin.nextUseByDay!)}</span>}
       <span className="tin-status">{statusLabel(tin)}</span>
     </button>
   );
@@ -45,7 +51,7 @@ export function Pantry({ tins, world, drain, onOpen }: { tins: TinSummary[]; wor
           <div className="shelf-plank" aria-hidden="true" />
         </section>
       ))}
-      <p className="pantry-legend"><span className="legend-line" aria-hidden="true" /> Dashed line = reorder point. Tins show how full each shelf is.</p>
+      <p className="pantry-legend"><span className="legend-line" aria-hidden="true" /> Dashed line: reorder point. Days of stock: how long each item lasts at today’s pace. Use-by dates show when a batch expires within a week.</p>
     </div>
   );
 }
@@ -69,7 +75,7 @@ export function TinDetail({ tin, world, onClose }: { tin: TinSummary; world: Wor
           <div>
             <p className="ops-eyebrow">{statusLabel(tin)}</p>
             <h2 id="tin-detail-title">{tin.ingredient.name}</h2>
-            <p className="tin-detail-stats"><strong>{formatQty(tin.ingredient.id, tin.onHand)}</strong> on the shelf · <strong>{formatDaysLeft(tin.daysLeft)}</strong> left</p>
+            <p className="tin-detail-stats"><strong>{formatQty(tin.ingredient.id, tin.onHand)}</strong> on the shelf · lasts <strong>{Number.isFinite(tin.daysLeft) ? (tin.daysLeft < 1 ? "under a day" : `about ${formatDaysLeft(tin.daysLeft)}`) : "a long while"}</strong> at today’s pace{tin.nextUseByDay !== null && <> · oldest batch use by <strong>{formatDay(tin.nextUseByDay)}</strong></>}</p>
           </div>
         </div>
         <p className="tin-detail-why">{explainReorderPoint(tin)}</p>

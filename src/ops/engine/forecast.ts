@@ -61,3 +61,11 @@ export function formatDaysLeft(days: number): string {
   if (days < 1) return days <= 0 ? "Out" : "Under a day";
   return `${days < 10 ? days.toFixed(1).replace(/\.0$/, "") : Math.round(days)} days`;
 }
+
+/** How long the supply lasts at today's pace: "8.3 days of stock", "Out of stock". Not the use-by date. */
+export function formatStockDays(days: number): string {
+  if (!Number.isFinite(days)) return "Plenty of stock";
+  if (days <= 0) return "Out of stock";
+  if (days < 1) return "Under a day of stock";
+  return `${formatDaysLeft(days)} of stock`;
+}

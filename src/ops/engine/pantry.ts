@@ -1,6 +1,6 @@
 // A read-only summary of the shelf for the Pantry screen.
 import { INGREDIENTS, SETTINGS, getSupplier, type Ingredient, type Supplier } from "./data.ts";
-import { dailyUsage, daysLeft, formatDaysLeft, reorderPoint, stockStatus, type StockStatus } from "./forecast.ts";
+import { dailyUsage, daysLeft, formatDaysLeft, formatStockDays, reorderPoint, stockStatus, type StockStatus } from "./forecast.ts";
 import { formatQty, onHand, type Batch } from "./inventory.ts";
 import type { PurchaseOrder, World } from "./sim.ts";
 
@@ -10,7 +10,10 @@ export type TinSummary = {
   onHand: number;
   onOrder: number;
   usagePerDay: number;
+  /** Days of stock at today's pace (not the use-by date). */
   daysLeft: number;
+  /** The soonest use-by day among the batches on the shelf, if any expire. */
+  nextUseByDay: number | null;
   reorderPoint: number;
   status: StockStatus;
   /** 0–1 against a fixed "full shelf" level, so tins are comparable across days. */
@@ -58,6 +61,7 @@ export function summarizeTin(world: World, ingredient: Ingredient): TinSummary {
     onOrder,
     usagePerDay: usage,
     daysLeft: daysLeft(qty, usage),
+    nextUseByDay: world.stock[ingredient.id].reduce<number | null>((soonest, batch) => (batch.expiresDay === null ? soonest : soonest === null ? batch.expiresDay : Math.min(soonest, batch.expiresDay)), null),
     reorderPoint: point,
     status: stockStatus(qty, onOrder, usage, point),
     fill: Math.max(0, Math.min(1, qty / Math.max(1, shelfCapacity(world, ingredient)))),
@@ -100,4 +104,4 @@ export function statusLabel(tin: TinSummary): string {
   return STATUS_LABEL[tin.status];
 }
 
-export { formatDaysLeft };
+export { formatDaysLeft, formatStockDays };

@@ -180,7 +180,7 @@ export function planSmart(world: World): Plan {
       rule: "Low stock",
       text: bookedSoon > 0 && state.onHand + state.onOrder > state.reorderPoint
         ? `${state.ingredient.name}: ${formatQty(state.ingredient.id, state.onHand)} on the shelf, but after the ${formatQty(state.ingredient.id, bookedSoon)} the booked order needs, that's below the reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`
-        : `${state.ingredient.name}: down to ${formatQty(state.ingredient.id, state.onHand)} (${days(state.daysLeft)} left), at or below the reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`,
+        : `${state.ingredient.name}: down to ${formatQty(state.ingredient.id, state.onHand)} (${days(state.daysLeft)} of stock), at or below the reorder point of ${formatQty(state.ingredient.id, Math.round(state.reorderPoint))}.`,
     }];
     const booked = bookedDemand(world, state.ingredient.id, choice.supplier.leadDays + SETTINGS.safetyDays + choice.supplier.orderCycleDays);
     if (booked > 0) reasons.push({ rule: "Known orders", text: `Includes ${formatQty(state.ingredient.id, booked)} of ${state.ingredient.name.toLowerCase()} for an upcoming booked order.` });
@@ -352,8 +352,8 @@ export function planSmart(world: World): Plan {
         const lead = getSupplier(draft.supplierId).leadDays;
         const cost = formatCents(makeLine(world, draft.supplierId, line.ingredientId, line.packs, line.role).totalCents);
         const reason = risk(draft, line) < 1
-          ? `Couldn't fit ${state.ingredient.name.toLowerCase()} (${cost}) in what's left of this week's cash cap. Flagged for you: ${days(state.daysLeft)} left.`
-          : `Deferred ${state.ingredient.name.toLowerCase()} to next week's budget: ${days(state.daysLeft)} left and delivery takes ${plural(lead, "day")}.`;
+          ? `Couldn't fit ${state.ingredient.name.toLowerCase()} (${cost}) in what's left of this week's cash cap. Flagged for you: only ${days(state.daysLeft)} of stock.`
+          : `Deferred ${state.ingredient.name.toLowerCase()} to next week's budget: ${days(state.daysLeft)} of stock, and delivery takes ${plural(lead, "day")}.`;
         plan.deferred.push({ ingredientId: line.ingredientId, reason });
       }
     }

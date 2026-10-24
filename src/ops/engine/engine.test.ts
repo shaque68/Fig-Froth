@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DRINKS, INGREDIENTS, SUPPLIERS } from "./data.ts";
-import { dailyUsage, daysLeft, lineUsage, reorderPoint, stockStatus } from "./forecast.ts";
+import { dailyUsage, daysLeft, formatStockDays, lineUsage, reorderPoint, stockStatus } from "./forecast.ts";
 import { deductOldestFirst, removeExpired, type Batch } from "./inventory.ts";
 import { formatCents } from "./money.ts";
 import { dayConditions, generateDayOrders, icedChance } from "./orders.ts";
@@ -55,6 +55,14 @@ test("days of stock left and reorder point follow the plain-language rules", () 
   // 300 a day × (5-day lead time + 2 safety days)
   assert.equal(reorderPoint(300, 5), 2100);
   assert.equal(reorderPoint(300, 5, 0), 1500);
+});
+
+test("days of stock read as how long supply lasts, not a use-by date", () => {
+  assert.equal(formatStockDays(8.34), "8.3 days of stock");
+  assert.equal(formatStockDays(12.6), "13 days of stock");
+  assert.equal(formatStockDays(0.4), "Under a day of stock");
+  assert.equal(formatStockDays(0), "Out of stock");
+  assert.equal(formatStockDays(Number.POSITIVE_INFINITY), "Plenty of stock");
 });
 
 test("stock status uses on hand plus what's already on order", () => {

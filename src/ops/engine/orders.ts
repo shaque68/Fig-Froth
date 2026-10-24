@@ -79,6 +79,13 @@ export function formatClock(minute: number): string {
   return `${displayHour}:${String(mins).padStart(2, "0")} ${suffix}`;
 }
 
+/** "Jun 6": compact, for small labels. */
+export function formatShortDate(day: number): string {
+  const date = new Date(`${SETTINGS.startDate}T12:00:00`);
+  date.setDate(date.getDate() + day);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function formatDay(day: number, style: "short" | "long" = "short"): string {
   const date = new Date(`${SETTINGS.startDate}T12:00:00`);
   date.setDate(date.getDate() + day);

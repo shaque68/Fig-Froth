@@ -83,6 +83,9 @@
 .tin-name { margin-top: 4px; color: var(--ops-text); font-size: 15px; font-weight: 600; line-height: 1.25; }
 .tin-days { color: var(--ops-muted); font-size: 14px; }
 .tin-days strong { color: var(--ops-text); font-size: 16px; }
+.tin-days { display: grid; line-height: 1.25; }
+.tin-days small { color: var(--ops-muted); font-size: 13px; }
+.tin-useby { color: #8a6420; font-size: 13px; font-weight: 600; }
 .tin-status { margin-top: 3px; padding: 2px 10px; border-radius: 20px; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .status-ok .tin-status { color: var(--ops-ok); background: #e3eadc; }
 .status-soon .tin-status { color: var(--ops-soon); background: #f4e8cc; }

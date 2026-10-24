@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BellRing, CloudSun, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
-import { formatDaysLeft, needsAttention, statusLabel, summarizePantry } from "../engine/pantry";
+import { formatDaysLeft, formatStockDays, needsAttention, statusLabel, summarizePantry } from "../engine/pantry";
 import { startSpecial } from "../engine/freshness";
 import { resolveInvoice } from "../engine/match";
 import { approvePo, rejectPo } from "../engine/purchasing";
@@ -283,9 +283,9 @@ export default function OpsPage() {
         </div>
         <div className="ops-hero-side">
           <div className="ops-hero-stat" aria-live="polite">
-            <span>Days of matcha left</span>
+            <span>Matcha in stock</span>
             <strong>{matcha ? formatDaysLeft(matcha.daysLeft) : "—"}</strong>
-            <small>{matcha ? statusLabel(matcha) : ""}</small>
+            <small>{matcha ? `at today’s pace · ${statusLabel(matcha)}` : ""}</small>
           </div>
         </div>
       </header>
@@ -401,7 +401,7 @@ export default function OpsPage() {
                     <li key={tin.ingredient.id} className={`attention-item status-${tin.status}`}>
                       <button onClick={() => setOpenTin(tin.ingredient.id)}>
                         <span className="attention-name">{tin.ingredient.name}</span>
-                        <span className="attention-days">{formatDaysLeft(tin.daysLeft)}{Number.isFinite(tin.daysLeft) && tin.daysLeft >= 1 ? " left" : ""}</span>
+                        <span className="attention-days">{formatStockDays(tin.daysLeft)}</span>
                         <span className="attention-status">{statusLabel(tin)}{tin.openOrders[0] ? ` · ${tin.openOrders[0].id}` : ""}</span>
                       </button>
                     </li>
