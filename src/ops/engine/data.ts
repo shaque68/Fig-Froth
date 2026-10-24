@@ -60,10 +60,10 @@ export type Supplier = {
 };
 
 export const SHELVES: Array<{ id: Shelf; name: string }> = [
-  { id: "matcha", name: "The matcha shelf" },
+  { id: "matcha", name: "Matcha" },
+  { id: "dairy", name: "Milk & cream" },
   { id: "flavors", name: "Syrups & purées" },
-  { id: "dairy", name: "The fridge" },
-  { id: "packaging", name: "Cups & such" },
+  { id: "packaging", name: "Cups, lids & straws" },
 ];
 
 export const INGREDIENTS: Ingredient[] = [

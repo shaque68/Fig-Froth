@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BellRing, CloudSun, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
-import { formatDaysLeft, formatStockDays, needsAttention, statusLabel, summarizePantry } from "../engine/pantry";
+import { formatStockDays, needsAttention, statusLabel, statusTone, summarizePantry } from "../engine/pantry";
 import { startSpecial } from "../engine/freshness";
 import { resolveInvoice } from "../engine/match";
 import { approvePo, rejectPo } from "../engine/purchasing";
@@ -110,7 +110,6 @@ export default function OpsPage() {
   const tins = useMemo(() => summarizePantry(world), [world]);
   const attention = useMemo(() => needsAttention(tins), [tins]);
   const awaiting = world.purchaseOrders.filter((po) => po.status === "awaiting");
-  const matcha = tins.find((tin) => tin.ingredient.id === "ceremonial-matcha");
   const lastRun = world.agentRuns.at(-1);
   const running = run !== null;
 
@@ -275,20 +274,7 @@ export default function OpsPage() {
 
   return (
     <div className={`ops-page ${reducedMotion ? "reduce-motion" : ""} ${largeText ? "ops-large" : ""} ${presenting ? "is-presenting" : ""}`}>
-      <header className="ops-hero">
-        <div>
-          <p className="ops-eyebrow"><span className="ops-eyebrow-line" /> Operations · Paterson shop</p>
-          <h1>Behind the <em>counter.</em></h1>
-          <p className="ops-lede">Stock, purchase orders, and suppliers in one place. The restock agent checks the shelves every night at closing and asks before any big order goes out.</p>
-        </div>
-        <div className="ops-hero-side">
-          <div className="ops-hero-stat" aria-live="polite">
-            <span>Matcha in stock</span>
-            <strong>{matcha ? formatDaysLeft(matcha.daysLeft) : "—"}</strong>
-            <small>{matcha ? `at today’s pace · ${statusLabel(matcha)}` : ""}</small>
-          </div>
-        </div>
-      </header>
+      <h1 className="sr-only">Behind the counter</h1>
 
       <div className="ops-controls" id="ops-controls" role="region" aria-label="Controls">
         <div className="ops-controls-bar">
@@ -398,7 +384,7 @@ export default function OpsPage() {
               {attention.length === 0 ? <p className="ops-muted">Everything is comfortably stocked.</p> : (
                 <ul className="attention-list">
                   {attention.slice(0, 5).map((tin) => (
-                    <li key={tin.ingredient.id} className={`attention-item status-${tin.status}`}>
+                    <li key={tin.ingredient.id} className={`attention-item tone-${statusTone(tin)}`}>
                       <button onClick={() => setOpenTin(tin.ingredient.id)}>
                         <span className="attention-name">{tin.ingredient.name}</span>
                         <span className="attention-days">{formatStockDays(tin.daysLeft)}</span>

@@ -62,7 +62,7 @@ export function demoBrief(world: World): string {
     parts.push(`${snapshot.waitingForApproval.length === 1 ? "One order needs" : `${snapshot.waitingForApproval.length} orders need`} your approval: ${list(snapshot.waitingForApproval.map((order) => `${order.id} (${order.supplier}, ${order.total})`))}.`);
   }
   if (snapshot.arrivingToday.length > 0) parts.push(`Arrived this morning: ${list(snapshot.arrivingToday)}.`);
-  const urgent = snapshot.needsAttention.filter((item) => item.status !== "Reorder soon").slice(0, 3);
+  const urgent = snapshot.needsAttention.filter((item) => item.status === "Reorder now" || item.status.startsWith("Out")).slice(0, 3);
   if (urgent.length > 0) parts.push(`Keep an eye on ${list(urgent.map((item) => `${item.item.toLowerCase()} (${item.daysOfStock}, ${item.status.toLowerCase()})`))}.`);
   else parts.push("Nothing on the shelf is urgent.");
   if (snapshot.invoicesToReview.length > 0) parts.push(`${snapshot.invoicesToReview.length === 1 ? "One invoice doesn’t" : `${snapshot.invoicesToReview.length} invoices don’t`} match what we ordered and received.`);

@@ -99,8 +99,19 @@ export const STATUS_LABEL: Record<StockStatus, string> = {
   out: "Out",
 };
 
-export function statusLabel(tin: TinSummary): string {
-  if (tin.status === "now" && tin.onOrder > 0) return "On order";
+export type StatusTone = "red" | "yellow" | "green";
+
+/** Red: reorder now (or out). Yellow: reorder soon, or low but already on order. Green: OK. */
+export function statusTone(tin: Pick<TinSummary, "status" | "onOrder">): StatusTone {
+  if (tin.status === "out") return "red";
+  if (tin.status === "now") return tin.onOrder > 0 ? "yellow" : "red";
+  if (tin.status === "soon") return "yellow";
+  return "green";
+}
+
+export function statusLabel(tin: Pick<TinSummary, "status" | "onOrder">): string {
+  if (tin.onOrder > 0 && (tin.status === "now" || tin.status === "soon")) return "On order";
+  if (tin.onOrder > 0 && tin.status === "out") return "Out · on order";
   return STATUS_LABEL[tin.status];
 }
 

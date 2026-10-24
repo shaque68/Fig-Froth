@@ -65,6 +65,19 @@ test("days of stock read as how long supply lasts, not a use-by date", () => {
   assert.equal(formatStockDays(Number.POSITIVE_INFINITY), "Plenty of stock");
 });
 
+test("pantry colors: red to reorder now, yellow for soon or on order, green when OK", async () => {
+  const { statusTone } = await import("./pantry.ts");
+  assert.equal(statusTone({ status: "now", onOrder: 0 }), "red");
+  assert.equal(statusTone({ status: "out", onOrder: 500 }), "red");
+  assert.equal(statusTone({ status: "now", onOrder: 500 }), "yellow");
+  assert.equal(statusTone({ status: "soon", onOrder: 0 }), "yellow");
+  assert.equal(statusTone({ status: "ok", onOrder: 0 }), "green");
+  const { statusLabel } = await import("./pantry.ts");
+  assert.equal(statusLabel({ status: "soon", onOrder: 500 }), "On order");
+  assert.equal(statusLabel({ status: "now", onOrder: 0 }), "Reorder now");
+  assert.equal(statusLabel({ status: "out", onOrder: 500 }), "Out · on order");
+});
+
 test("stock status uses on hand plus what's already on order", () => {
   const point = reorderPoint(100, 2); // 400
   assert.equal(stockStatus(0, 500, 100, point), "out");

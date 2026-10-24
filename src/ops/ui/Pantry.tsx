@@ -3,14 +3,14 @@ import { X } from "lucide-react";
 import { offerFor, SHELVES } from "../engine/data";
 import { formatQty } from "../engine/inventory";
 import { formatClock, formatDay, formatShortDate } from "../engine/orders";
-import { explainReorderPoint, formatDaysLeft, formatStockDays, shelfCapacity, statusLabel, type TinSummary } from "../engine/pantry";
+import { explainReorderPoint, formatDaysLeft, formatStockDays, shelfCapacity, statusLabel, statusTone, type TinSummary } from "../engine/pantry";
 import type { World } from "../engine/sim";
 import { TinGraphic } from "./Tin";
 
 export type Drain = { key: number; usage: Record<string, number> };
 
 function statusClass(tin: TinSummary) {
-  return `status-${tin.status}${tin.onOrder > 0 && tin.status !== "ok" ? " status-on-order" : ""}`;
+  return `status-${tin.status} tone-${statusTone(tin)}`;
 }
 
 /** Show the use-by date on the tin only when a batch expires within a week. */
@@ -30,28 +30,49 @@ function TinCard({ tin, world, drain, drainIndex, onOpen }: { tin: TinSummary; w
       <span className="tin-name">{tin.ingredient.name}</span>
       <span className="tin-days">{Number.isFinite(tin.daysLeft) && tin.daysLeft >= 1 ? <><strong>{formatDaysLeft(tin.daysLeft)}</strong><small>of stock</small></> : <strong>{formatStockDays(tin.daysLeft)}</strong>}</span>
       {useBySoon(tin, world) && <span className="tin-useby">Use by {formatShortDate(tin.nextUseByDay!)}</span>}
-      <span className="tin-status">{statusLabel(tin)}</span>
+      {statusTone(tin) !== "green" && <span className="tin-status">{statusLabel(tin)}</span>}
     </button>
   );
+}
+
+/** "2 to reorder now · 1 soon", or "All stocked". */
+function categorySummary(tins: TinSummary[]): { text: string; tone: "red" | "yellow" | "green" } {
+  const red = tins.filter((tin) => statusTone(tin) === "red").length;
+  const yellow = tins.filter((tin) => statusTone(tin) === "yellow").length;
+  if (red === 0 && yellow === 0) return { text: "All stocked", tone: "green" };
+  const parts = [red > 0 ? `${red} to reorder now` : "", yellow > 0 ? `${yellow} ${red > 0 ? "soon" : "to reorder soon or on order"}` : ""].filter(Boolean);
+  return { text: parts.join(" · "), tone: red > 0 ? "red" : "yellow" };
 }
 
 export function Pantry({ tins, world, drain, onOpen }: { tins: TinSummary[]; world: World; drain: Drain | null; onOpen: (id: string) => void }) {
   const drainOrder = drain ? Object.keys(drain.usage) : [];
   return (
     <div className="pantry">
-      {SHELVES.map((shelf) => (
-        <section key={shelf.id} className="shelf" aria-label={shelf.name} style={{ "--span": tins.filter((tin) => tin.ingredient.shelf === shelf.id).length } as React.CSSProperties}>
-          <h3 className="shelf-name">{shelf.name}</h3>
-          <div className="shelf-row">
-            {tins.filter((tin) => tin.ingredient.shelf === shelf.id).map((tin) => {
-              const index = drainOrder.indexOf(tin.ingredient.id);
-              return <TinCard key={tin.ingredient.id} tin={tin} world={world} drain={drain} drainIndex={index >= 0 ? index : undefined} onOpen={() => onOpen(tin.ingredient.id)} />;
-            })}
-          </div>
-          <div className="shelf-plank" aria-hidden="true" />
-        </section>
-      ))}
-      <p className="pantry-legend"><span className="legend-line" aria-hidden="true" /> Dashed line: reorder point. Days of stock: how long each item lasts at today’s pace. Use-by dates show when a batch expires within a week.</p>
+      <ul className="pantry-key" aria-label="Color key">
+        <li><span className="key-dot tone-red" aria-hidden="true" /> Reorder now</li>
+        <li><span className="key-dot tone-yellow" aria-hidden="true" /> Reorder soon or on order</li>
+        <li><span className="key-dot tone-green" aria-hidden="true" /> OK</li>
+        <li><span className="legend-line" aria-hidden="true" /> Reorder point</li>
+      </ul>
+      {SHELVES.map((shelf) => {
+        const shelfTins = tins.filter((tin) => tin.ingredient.shelf === shelf.id);
+        const summary = categorySummary(shelfTins);
+        return (
+          <section key={shelf.id} className="category" aria-labelledby={`category-${shelf.id}`}>
+            <header className="category-head">
+              <h3 id={`category-${shelf.id}`}>{shelf.name}</h3>
+              <span className={`category-summary tone-${summary.tone}`}>{summary.text}</span>
+            </header>
+            <div className="category-row">
+              {shelfTins.map((tin) => {
+                const index = drainOrder.indexOf(tin.ingredient.id);
+                return <TinCard key={tin.ingredient.id} tin={tin} world={world} drain={drain} drainIndex={index >= 0 ? index : undefined} onOpen={() => onOpen(tin.ingredient.id)} />;
+              })}
+            </div>
+          </section>
+        );
+      })}
+      <p className="pantry-legend">Days of stock: how long each item lasts at today’s pace. Use-by dates appear when a batch expires within a week.</p>
     </div>
   );
 }
