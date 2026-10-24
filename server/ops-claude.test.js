@@ -56,6 +56,18 @@ test("Claude mode sends the snapshot as data and returns only the written text",
   assert.ok(!JSON.stringify(params).includes("test-key"), "the key is never put in the prompt");
 });
 
+test("Claude mode can draft an invoice dispute from the order's mismatches", async () => {
+  let prompt = "";
+  const fakeClient = { beta: { messages: { create: async (params) => { prompt = params.messages[0].content; return { model: OPS_CLAUDE_MODEL, stop_reason: "end_turn", content: [{ type: "text", text: "Hi team, we were billed for 6 sleeves but 5 arrived." }] }; } } } };
+  await withApp({ apiKey: "test-key", createClient: () => fakeClient }, async (base) => {
+    const response = await post(base, { kind: "dispute", snapshot: { order: { id: "PO-1013", invoice: { issues: ["Billed for 6 sleeves of Dart lids, but only 5 arrived: $10.50 too much."] } } } });
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).text, /billed for 6 sleeves/);
+  });
+  assert.match(prompt, /invoice/);
+  assert.match(prompt, /corrected invoice or a credit/);
+});
+
 test("Claude mode rejects malformed requests and falls back on a refusal", async () => {
   const refusing = { beta: { messages: { create: async () => ({ model: OPS_CLAUDE_MODEL, stop_reason: "refusal", content: [] }) } } };
   await withApp({ apiKey: "test-key", createClient: () => refusing }, async (base) => {

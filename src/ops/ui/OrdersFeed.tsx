@@ -9,7 +9,7 @@ export function OrdersFeed({ recent, latestKey }: { recent: ServedOrder[]; lates
       {recent.length === 0 ? <p className="ops-muted feed-empty">No orders yet today. Press <strong>Next order</strong> to serve the first customer.</p> : (
         <ol className="feed-list" aria-label="Most recent orders first">
           {recent.slice(0, 14).map((served) => (
-            <li key={served.order.id} className={`feed-item ${served.missed > 0 ? "feed-missed" : ""} ${served.order.id === latestKey ? "feed-latest" : ""}`}>
+            <li key={served.order.id} className={`feed-item ${served.missed > 0 ? "feed-missed" : ""} ${served.order.id === latestKey ? "feed-latest" : ""} ${served.order.id.startsWith("W-") ? "feed-web" : ""}`}>
               <div className="feed-meta">
                 <span>{formatClock(served.order.minute)}</span>
                 <span className="feed-id">#{served.order.id}{served.order.note ? ` · ${served.order.note}` : ""}</span>

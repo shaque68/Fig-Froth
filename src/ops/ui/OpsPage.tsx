@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BellRing, CloudSun, Leaf, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, BellRing, CloudSun, Leaf, LogOut, NotebookPen, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
 import { formatStockDays, needsAttention, statusLabel, statusTone, summarizePantry } from "../engine/pantry";
@@ -8,7 +8,7 @@ import { resolveInvoice } from "../engine/match";
 import { approvePo, rejectPo } from "../engine/purchasing";
 import { SETTINGS } from "../engine/data";
 import { createScenarioWorld, getScenario, SCENARIOS } from "../engine/scenarios";
-import { runToDay, stepHour, stepNextOrder } from "../engine/shop";
+import { runToDay, serveWebOrder, stepHour, stepNextOrder, type WebOrder } from "../engine/shop";
 import type { PurchaseOrder, World } from "../engine/sim";
 import { AgentTrace } from "./AgentPanel";
 import { AuditLog } from "./AuditLog";
@@ -88,7 +88,7 @@ function PoGroup({ title, pos, today, onApprove, onReject, onWrite, empty }: { t
   );
 }
 
-export default function OpsPage({ onExit }: { onExit?: () => void }) {
+export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: () => void; onEditMenu?: () => void; onSignOut?: () => void }) {
   const [seed, setSeed] = useState(DEFAULT_SEED);
   const [seedDraft, setSeedDraft] = useState(String(DEFAULT_SEED));
   const [scenarioId, setScenarioId] = useState("normal");
@@ -100,7 +100,7 @@ export default function OpsPage({ onExit }: { onExit?: () => void }) {
   const [tab, setTab] = useState<Tab>("today");
   const [notice, setNotice] = useState<string | null>(null);
   const [claudeMode, setClaudeMode] = useState(false);
-  const [writing, setWriting] = useState<{ kind: "explain" | "supplier-message"; poId: string; written: Written | null } | null>(null);
+  const [writing, setWriting] = useState<{ kind: "explain" | "supplier-message" | "dispute"; poId: string; written: Written | null } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [tourStep, setTourStep] = useState(0);
   const [largeText, setLargeTextState] = useState(() => readFlag(LARGE_TEXT_KEY, false));
@@ -112,6 +112,39 @@ export default function OpsPage({ onExit }: { onExit?: () => void }) {
   const awaiting = world.purchaseOrders.filter((po) => po.status === "awaiting");
   const lastRun = world.agentRuns.at(-1);
   const running = run !== null;
+
+  const worldRef = useRef(world);
+  worldRef.current = world;
+  const lastWebOrder = useRef(0);
+
+  // Storefront orders: check the server's feed every few seconds and serve new ones right away.
+  useEffect(() => {
+    let active = true;
+    async function poll() {
+      try {
+        const response = await fetch(`/api/admin/orders?after=${lastWebOrder.current}`);
+        if (!response.ok) return;
+        const { orders } = await response.json() as { orders: WebOrder[] };
+        if (!active || orders.length === 0) return;
+        lastWebOrder.current = orders[orders.length - 1].id;
+        const next = structuredClone(worldRef.current);
+        const usage: Record<string, number> = {};
+        for (const order of orders) {
+          const served = serveWebOrder(next, order);
+          for (const [id, amount] of Object.entries(served.usage)) usage[id] = (usage[id] ?? 0) + amount;
+        }
+        setWorld(next);
+        setDrain({ key: Date.now(), usage });
+        const drinks = orders.flatMap((order) => order.items.map((item) => `${item.quantity} × ${item.name}`));
+        setNotice(`New website ${orders.length === 1 ? "order" : "orders"} ${orders.map((order) => order.number).join(", ")}: ${drinks.join(", ")}.`);
+      } catch {
+        // The feed is best-effort; the next check will try again.
+      }
+    }
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
 
   const update = useCallback((step: (next: World) => void) => {
     setWorld((current) => {
@@ -294,7 +327,9 @@ export default function OpsPage({ onExit }: { onExit?: () => void }) {
             <button className="ops-button ops-controls-toggle" aria-expanded={controlsOpen} aria-controls="ops-controls-panel" onClick={() => setControlsOpen(!controlsOpen)}>
               <SlidersHorizontal size={16} /> {controlsOpen ? "Hide controls" : "Controls"}
             </button>
+            {onEditMenu && <button className="ops-button" onClick={onEditMenu}><NotebookPen size={16} /> Edit menu</button>}
             {onExit && <button className="ops-button ops-exit" onClick={onExit}><ArrowLeft size={16} /> Back to site</button>}
+            {onSignOut && <button className="ops-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button>}
           </div>
         </div>
         {controlsOpen && <div className="ops-controls-panel" id="ops-controls-panel">
@@ -464,7 +499,7 @@ export default function OpsPage({ onExit }: { onExit?: () => void }) {
       {tab === "invoices" && (
         <section className="ops-panel" aria-labelledby="invoice-title">
           <div className="ops-panel-head"><div><p className="ops-eyebrow">Ordered, arrived, and billed should match</p><h2 id="invoice-title">Invoice <em>check.</em></h2></div></div>
-          <InvoicePanel world={world} onResolve={resolve} />
+          <InvoicePanel world={world} onResolve={resolve} onWrite={write} />
         </section>
       )}
 
@@ -479,7 +514,7 @@ export default function OpsPage({ onExit }: { onExit?: () => void }) {
         />
       )}
 
-      {writing && <WritingDialog title={`${writing.kind === "explain" ? "Why" : "Message to the supplier for"} ${writing.poId}${writing.kind === "explain" ? "?" : ""}`} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}
+      {writing && <WritingDialog title={writing.kind === "explain" ? `Why ${writing.poId}?` : writing.kind === "dispute" ? `Invoice dispute for ${writing.poId}` : `Message to the supplier for ${writing.poId}`} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}
 
       {selectedTin && <TinDetail tin={selectedTin} world={world} onClose={() => setOpenTin(null)} />}
     </div>

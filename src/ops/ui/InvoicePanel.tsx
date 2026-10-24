@@ -2,7 +2,8 @@ import { getIngredient, getSupplier } from "../engine/data";
 import { formatCents } from "../engine/money";
 import { formatDay } from "../engine/orders";
 import type { PurchaseOrder, World } from "../engine/sim";
-import { PO_STATUS_LABEL } from "./PoCard";
+import { MessageSquareWarning } from "lucide-react";
+import { PO_STATUS_LABEL, type WriteRequest } from "./PoCard";
 
 function MatchTable({ po }: { po: PurchaseOrder }) {
   return (
@@ -33,7 +34,7 @@ function MatchTable({ po }: { po: PurchaseOrder }) {
   );
 }
 
-export function InvoicePanel({ world, onResolve }: { world: World; onResolve: (id: string, decision: "accept" | "dispute") => void }) {
+export function InvoicePanel({ world, onResolve, onWrite }: { world: World; onResolve: (id: string, decision: "accept" | "dispute") => void; onWrite?: WriteRequest }) {
   const checked = [...world.purchaseOrders].reverse().filter((po) => po.invoice);
   const flagged = checked.filter((po) => po.status === "flagged");
   const settled = checked.filter((po) => po.status !== "flagged");
@@ -53,6 +54,7 @@ export function InvoicePanel({ world, onResolve }: { world: World; onResolve: (i
           <div className="po-actions">
             <button className="ops-button ops-button-primary" onClick={() => onResolve(po.id, "dispute")}>Dispute with supplier</button>
             <button className="ops-button" onClick={() => onResolve(po.id, "accept")}>Accept as billed</button>
+            {onWrite && <button className="ops-button" onClick={() => onWrite("dispute", po.id)}><MessageSquareWarning size={16} /> Draft dispute message</button>}
           </div>
         </article>
       ))}

@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { z } from "zod";
 import { initialProducts } from "../src/catalog.ts";
+import { createOwnerAuth } from "./admin-auth.js";
 import { registerOpsClaude } from "./ops-claude.js";
+import { createOrderBook, orderItems } from "./shop-orders.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -44,6 +46,11 @@ const allowedCheckoutHosts = new Set([
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "32kb", strict: true }));
+
+// Behind the Counter: owner sign-in, and the storefront orders it shows as they arrive.
+const ownerAuth = createOwnerAuth();
+const orderBook = createOrderBook();
+ownerAuth.register(app);
 
 function validateConfiguration() {
   if (environment !== "sandbox" && environment !== "production") {
@@ -133,12 +140,14 @@ function validatePaymentUrl(value) {
   }
 }
 
+function squareCheckoutReady() {
+  return validateConfiguration() === null && Boolean(accessToken && locationId && publicBaseUrl);
+}
+
 app.get("/api/checkout/status", (_req, res) => {
-  const configurationError = validateConfiguration();
-  res.json({
-    available: configurationError === null && Boolean(accessToken && locationId && publicBaseUrl),
-    environment,
-  });
+  const available = squareCheckoutReady();
+  // Without Square, customers can still place a pickup order and pay at the counter.
+  res.json({ available, environment, pickupAvailable: !available });
 });
 
 app.post("/api/checkout", enforceRateLimit, async (req, res) => {
@@ -226,6 +235,7 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
       console.error("Square returned an unexpected checkout URL host.");
       return res.status(502).json({ error: "Square returned an invalid checkout link. Please contact the shop." });
     }
+    orderBook.add({ idempotencyKey: parsed.data.idempotencyKey, source: "square", pickupTime, items: orderItems(parsed.data.items, productsById) });
     return res.status(201).json({ checkoutUrl });
   } catch (error) {
     console.error("Square checkout request failed:", error instanceof Error ? error.message : "Unknown network error");
@@ -233,8 +243,41 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
   }
 });
 
-// Optional Claude mode for the Behind the Counter demo (off unless ANTHROPIC_API_KEY is set).
-registerOpsClaude(app);
+const pickupLimits = new Map();
+function limitPickupOrders(req, res, next) {
+  const now = Date.now();
+  const entry = pickupLimits.get(req.ip);
+  if (!entry || entry.resetAt <= now) {
+    pickupLimits.set(req.ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return next();
+  }
+  if (entry.count >= 40) return res.status(429).json({ error: "Too many orders at once. Please wait a little and try again." });
+  entry.count += 1;
+  return next();
+}
+
+app.post("/api/orders/pickup", limitPickupOrders, (req, res) => {
+  if (squareCheckoutReady()) return res.status(409).json({ error: "Please check out with Square." });
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Some order details are missing or invalid. Please review the form and your bag." });
+  }
+  try {
+    buildLineItems(parsed.data.items);
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "One or more items could not be checked." });
+  }
+  const order = orderBook.add({ idempotencyKey: parsed.data.idempotencyKey, source: "pickup", pickupTime: parsed.data.pickupTime, items: orderItems(parsed.data.items, productsById) });
+  return res.status(201).json({ orderNumber: order.number });
+});
+
+app.get("/api/admin/orders", ownerAuth.requireOwner, (req, res) => {
+  const after = Number.parseInt(String(req.query.after ?? "0"), 10);
+  res.json({ orders: orderBook.since(Number.isFinite(after) ? after : 0) });
+});
+
+// Optional Claude mode for Behind the Counter (off unless ANTHROPIC_API_KEY is set). Owner only.
+registerOpsClaude(app, { guard: ownerAuth.requireOwner });
 
 if (existsSync(distDirectory)) {
   app.use(express.static(distDirectory, { index: false, maxAge: "1h" }));

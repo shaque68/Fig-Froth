@@ -15,11 +15,12 @@ Use only the facts, numbers, and decisions in the snapshot. Never invent quantit
 const TASKS = {
   brief: "Write this morning's brief for the owner in 3 to 5 sentences: how yesterday went, anything waiting for their approval, what's running low, and anything else they should look at today. Lead with what needs them.",
   explain: "Explain the purchase order in the snapshot's \"order\" field in 2 to 4 sentences: what it buys, why the agent ordered it now, and how it saves money. If it needs approval, say why.",
+  dispute: "Draft a short, polite message to the supplier about the invoice for the purchase order in the snapshot's \"order\" field. List each problem in \"order.invoice.issues\" with its amount, say what the total overcharge is if the issues give it, and ask for a corrected invoice or a credit. Keep a friendly tone: they're a partner. Sign it \"The Fig & Froth team\". Do not include email addresses, phone numbers, or account details. Plain text, no subject line.",
   "supplier-message": "Draft a short, friendly message to the supplier for the purchase order in the snapshot's \"order\" field, listing the items and asking them to confirm the delivery date. Sign it \"The Fig & Froth team\". Do not include email addresses, phone numbers, or account details. Plain text, no subject line.",
 };
 
 const requestSchema = z.object({
-  kind: z.enum(["brief", "explain", "supplier-message"]),
+  kind: z.enum(["brief", "explain", "supplier-message", "dispute"]),
   snapshot: z.record(z.unknown()),
 }).strict();
 
@@ -47,12 +48,13 @@ export function textFrom(response) {
 export function registerOpsClaude(app, options = {}) {
   const apiKey = () => options.apiKey ?? process.env.ANTHROPIC_API_KEY;
   const createClient = options.createClient ?? ((key) => new Anthropic({ apiKey: key }));
+  const guard = options.guard ?? ((_req, _res, next) => next());
 
-  app.get("/api/ops/claude/status", (_req, res) => {
+  app.get("/api/ops/claude/status", guard, (_req, res) => {
     res.json({ available: Boolean(apiKey()), model: OPS_CLAUDE_MODEL });
   });
 
-  app.post("/api/ops/claude/write", rateLimit, async (req, res) => {
+  app.post("/api/ops/claude/write", guard, rateLimit, async (req, res) => {
     const key = apiKey();
     if (!key) return res.status(503).json({ error: "Claude mode isn't set up: add ANTHROPIC_API_KEY to the server's .env.", fallback: true });
     const parsed = requestSchema.safeParse(req.body);

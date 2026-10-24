@@ -7,11 +7,17 @@ npm install
 npm run dev
 ```
 
-The storefront includes a responsive home page and menu, product customizations, search and category filters, a persistent cart, pickup details, Square-hosted checkout, and a local menu editor. Open **Edit the menu** in the footer to update the browser's preview catalog.
+The storefront includes a responsive home page and menu, product customizations, search and category filters, a persistent cart, pickup details, and Square-hosted checkout. Until Square is configured, checkout offers **Place order · pay at pickup** instead, which sends the order to the shop.
+
+The owner's pages live under `/admin` and need a sign-in (see below): **Behind the counter** at `/admin` and the menu editor at `/admin/menu`. The storefront doesn't link to them except for a small **Staff sign-in** link in the footer.
+
+## Owner sign-in
+
+Copy `.env.example` to `.env` and set `OWNER_PASSWORD` to the password you'll use, then restart `npm run dev`. Open `http://localhost:5173/admin` and sign in. The password is checked on the server, which keeps you signed in with an HTTP-only cookie for 12 hours. Set `SESSION_SECRET` to a long random string to stay signed in across server restarts. Behind the Counter's data feeds and Claude mode refuse requests without that sign-in.
 
 ## Behind the Counter console
 
-An operations console inside the site: **Behind the counter** in the main menu, or open `http://localhost:5173/#behind-the-counter`. Supplier and product names are real brands (Ippodo, Restaurant Depot, WebstaurantStore, Imperial Dade, Monin, Oatly, Dart, and others), but every price, stock level, delivery, invoice, and customer order is simulated. It works fully offline, and nothing is actually ordered, paid, or sent.
+An operations console for the owner at `http://localhost:5173/admin` (sign in first; old `#behind-the-counter` links redirect there). Supplier and product names are real brands (Ippodo, Restaurant Depot, WebstaurantStore, Imperial Dade, Monin, Oatly, Dart, and others), but every price, stock level, delivery, and invoice is simulated, as are the walk-in customer orders (orders placed on the storefront are real and show up too). It works fully offline, and nothing is actually ordered from suppliers, paid, or sent.
 
 Run it with the same `npm run dev` as the storefront. What it shows:
 
@@ -23,9 +29,13 @@ Run it with the same `npm run dev` as the storefront. What it shows:
 - **Extras.** A freshness timeline with "use it up" specials, profit per drink with a what-if price slider, and an invoice check (ordered vs. arrived vs. billed).
 - **Presenter mode.** Hidden from the page: press **P** to start or end a six-step guided tour of the script below. Use ← → to move between steps, with an option for larger text.
 
+### Storefront orders in the console
+
+Orders placed on the storefront show up in Behind the Counter within a few seconds: they appear in **Live orders** marked as website orders, their ingredients come off the shelf, and they count toward the agent's next restock. To demo it, open the storefront in one window and `/admin` (signed in) in another, side by side, and place an order. Website drinks are counted as iced; drinks without a pantry recipe (the coffee drinks) are listed but not tracked. Orders are kept in the server's memory; in production they would come from Square's order webhooks and a database.
+
 ### Optional: Claude mode
 
-Off by default. When it's on, Claude writes the morning brief, the plain-language order explanations, and draft supplier messages from a snapshot of the console's state. Every quantity and dollar amount still comes from the tested ordering rules. To enable it, add `ANTHROPIC_API_KEY` to `.env` (see `.env.example`), restart `npm run dev`, and turn on **Claude mode**. The key is read only by the local Node server (`server/ops-claude.js`) and never reaches the browser. With no key, or if a request fails, it falls back to the built-in standard text and shows a small notice.
+Off by default. When it's on, Claude writes the morning brief, the plain-language order explanations, draft supplier messages, and invoice dispute drafts (from **Draft dispute message** on a flagged invoice) from a snapshot of the console's state. Every quantity and dollar amount still comes from the tested ordering rules. To enable it, add `ANTHROPIC_API_KEY` to `.env` (see `.env.example`), restart `npm run dev`, and turn on **Claude mode**. The key is read only by the local Node server (`server/ops-claude.js`) and never reaches the browser. With no key, or if a request fails, it falls back to the built-in standard text and shows a small notice.
 
 ### Five-minute demo script
 

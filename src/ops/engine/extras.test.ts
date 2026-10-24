@@ -153,3 +153,39 @@ test("demo-mode writing comes from templates and uses only engine numbers", asyn
   assert.equal(snapshot.order?.id, po.id);
   assert.ok(JSON.stringify(snapshot).length < 16000, "small enough to send to the local server");
 });
+
+test("a storefront order drains its recipe from the shelf and shows as a website order", async () => {
+  const { serveWebOrder } = await import("./shop.ts");
+  const { onHand } = await import("./inventory.ts");
+  const world = createScenarioWorld(2026);
+  const before = { puree: onHand(world.stock["strawberry-puree"]), oat: onHand(world.stock["oat-milk"]), cups: onHand(world.stock["cold-cups"]) };
+  const served = serveWebOrder(world, {
+    id: 1,
+    number: "W-0001",
+    items: [
+      { productId: "strawberry-booza", name: "Strawberry Booza Matcha", quantity: 2, selections: { Milk: "Oat milk", Sweetness: "Regular" } },
+      { productId: "oat-latte", name: "Oat Latte", quantity: 1, selections: { Sweetness: "Regular" } },
+    ],
+  });
+  assert.equal(served.made, 2);
+  assert.equal(served.order.id, "W-0001");
+  assert.match(served.order.note ?? "", /^Website order · also 1 Oat Latte \(not tracked\)$/);
+  assert.equal(onHand(world.stock["strawberry-puree"]), before.puree - 90);
+  assert.equal(onHand(world.stock["oat-milk"]), before.oat - 360);
+  assert.equal(onHand(world.stock["cold-cups"]), before.cups - 2);
+  assert.equal(world.recent[0].order.id, "W-0001");
+  assert.equal(world.today.orders, 1);
+});
+
+test("the standard invoice dispute draft lists each mismatch and the total overcharge", async () => {
+  const { demoDisputeMessage, buildSnapshot } = await import("./brief.ts");
+  const world = runPolicy(2026, "normal", "smart", 21);
+  const flagged = world.purchaseOrders.find((po) => po.status === "flagged")!;
+  const message = demoDisputeMessage(flagged);
+  assert.match(message, /^Hi .+ team,/);
+  for (const note of flagged.matchNotes ?? []) assert.ok(message.includes(note), `mentions: ${note}`);
+  assert.match(message, /That comes to \$[\d,.]+ more than we owe/);
+  assert.ok(!/@/.test(message), "no contact details in the draft");
+  const snapshot = buildSnapshot(world, flagged.id);
+  assert.ok((snapshot.order?.invoice?.issues.length ?? 0) > 0, "Claude gets the mismatches to write from");
+});

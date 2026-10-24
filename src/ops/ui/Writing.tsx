@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkles, X } from "lucide-react";
-import { buildSnapshot, demoBrief, demoExplanation, demoSupplierMessage, type WritingKind } from "../engine/brief";
+import { buildSnapshot, demoBrief, demoDisputeMessage, demoExplanation, demoSupplierMessage, type WritingKind } from "../engine/brief";
 import type { World } from "../engine/sim";
 
 export type Written = { text: string; source: "claude" | "demo"; notice?: string };
@@ -8,7 +8,7 @@ export type Written = { text: string; source: "claude" | "demo"; notice?: string
 /** Demo mode always uses templates. Claude mode asks the local server and falls back to templates on any failure. */
 export async function writeText(kind: WritingKind, world: World, claudeMode: boolean, poId?: string): Promise<Written> {
   const po = poId ? world.purchaseOrders.find((candidate) => candidate.id === poId) : undefined;
-  const template = kind === "brief" ? demoBrief(world) : kind === "explain" ? demoExplanation(po!) : demoSupplierMessage(po!);
+  const template = kind === "brief" ? demoBrief(world) : kind === "explain" ? demoExplanation(po!) : kind === "dispute" ? demoDisputeMessage(po!) : demoSupplierMessage(po!);
   if (!claudeMode) return { text: template, source: "demo" };
   try {
     const response = await fetch("/api/ops/claude/write", {
@@ -70,7 +70,7 @@ export function WritingDialog({ title, written, busy, kind, onClose }: { title: 
           <SourceTag written={written} />
           <p className="writing-text">{written.text}</p>
           {written.notice && <p className="writer-notice" role="status">{written.notice}</p>}
-          {kind === "supplier-message" && <p className="ops-fineprint">Draft only. Copy it into your email to send.</p>}
+          {(kind === "supplier-message" || kind === "dispute") && <p className="ops-fineprint">Draft only. Copy it into your email to send.</p>}
         </>}
       </div>
     </div>

@@ -28,7 +28,7 @@ function arrivalText(po: PurchaseOrder, today: number) {
   return `Due ${formatDay(po.promisedDay)}`;
 }
 
-export type WriteRequest = (kind: "explain" | "supplier-message", poId: string) => void;
+export type WriteRequest = (kind: "explain" | "supplier-message" | "dispute", poId: string) => void;
 
 export function PoCard({ po, today, onApprove, onReject, onWrite, defaultOpen = false }: { po: PurchaseOrder; today: number; onApprove?: (id: string) => void; onReject?: (id: string) => void; onWrite?: WriteRequest; defaultOpen?: boolean }) {
   const supplier = getSupplier(po.supplierId);

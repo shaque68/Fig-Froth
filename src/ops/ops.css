@@ -157,6 +157,8 @@
 .feed-item { padding: 9px 11px; border: 1px solid var(--line); background: #fff; }
 .feed-latest { border-color: #9fb093; box-shadow: inset 4px 0 0 #6f8f52; }
 .feed-missed { border-color: #e2c2b8; background: #fbf3f0; }
+.feed-web { border-color: #b9c9de; background: #f1f5fa; }
+.feed-web .feed-id { color: #2f557f; font-weight: 700; }
 .feed-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ops-muted); font-size: 13px; }
 .feed-id { font-variant-numeric: tabular-nums; }
 .feed-drinks { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 15px; }

@@ -5,11 +5,12 @@ import { formatQty } from "./inventory.ts";
 import { formatCents, formatDollars } from "./money.ts";
 import { formatDay } from "./orders.ts";
 import { needsAttention, statusLabel, summarizePantry } from "./pantry.ts";
+import { threeWayMatch } from "./match.ts";
 import { packPhrase } from "./purchasing.ts";
 import { getScenario } from "./scenarios.ts";
 import type { PurchaseOrder, World } from "./sim.ts";
 
-export type WritingKind = "brief" | "explain" | "supplier-message";
+export type WritingKind = "brief" | "explain" | "supplier-message" | "dispute";
 
 const daysText = (days: number) => (!Number.isFinite(days) ? "plenty of stock" : days < 1 ? "under a day of stock" : `${days.toFixed(1).replace(/\.0$/, "")} days of stock`);
 
@@ -28,6 +29,7 @@ export function buildSnapshot(world: World, poId?: string) {
     lines: order.lines.map((line) => `${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name, line.brand)} at ${formatCents(line.packPriceCents)} each`),
     reasons: order.reasons.map((reason) => `${reason.rule}: ${reason.text}`),
     savings: { bulkDiscount: formatCents(order.savings.bulkCents), shippingAvoided: formatCents(order.savings.shippingAvoidedCents) },
+    invoice: order.invoice ? { billed: formatCents(order.invoice.totalCents), issues: (order.matchNotes ?? []).filter((note) => !/^Ordered, received, and billed all agree|^You (accepted|disputed)/.test(note)) } : undefined,
   });
   return {
     note: "All numbers are simulated.",
@@ -91,6 +93,24 @@ export function demoExplanation(po: PurchaseOrder): string {
   if (savings.length > 0) sentences.push(`It saves ${list(savings)}.`);
   sentences.push(po.needsApproval ? `It needs a person’s OK${po.isBackup ? " because it duplicates an open order" : ` because it’s over the ${formatDollars(SETTINGS.approvalThresholdCents)} limit`}.` : "It was under the approval limit, so it went out on its own.");
   return sentences.join(" ");
+}
+
+/** Standard draft for disputing a flagged invoice: each mismatch, the amount, and the fix we want. */
+export function demoDisputeMessage(po: PurchaseOrder): string {
+  const supplier = getSupplier(po.supplierId);
+  const result = threeWayMatch(po);
+  const issues = result.notes.filter((note) => !/not billed for them/.test(note));
+  return [
+    `Hi ${supplier.name} team,`,
+    "",
+    `Thanks for delivering ${po.id}. When we checked the invoice against our order and what arrived, ${issues.length === 1 ? "one thing didn’t" : "a few things didn’t"} line up:`,
+    ...issues.map((issue) => `- ${issue}`),
+    "",
+    `That comes to ${formatCents(result.overchargeCents)} more than we owe. Could you send a corrected invoice or a credit for the difference? We’ll pay the rest as soon as it’s sorted.`,
+    "",
+    "Thank you!",
+    "The Fig & Froth team",
+  ].join("\n");
 }
 
 /** Demo-mode draft message to a supplier. Never sent anywhere. */

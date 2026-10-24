@@ -4,6 +4,7 @@ import {
   Clock3, Coffee, Instagram, Leaf, MapPin, Menu as MenuIcon, Minus, Plus,
   Search, ShoppingBag, SlidersHorizontal, Sparkles, Trash2, X,
 } from "lucide-react";
+import { AdminGate } from "./AdminGate";
 import { initialProducts, money, type ModifierGroup, type Product } from "./catalog";
 
 type View = "home" | "menu" | "cart" | "admin" | "checkout" | "confirmation" | "ops";
@@ -11,7 +12,22 @@ type CartItem = { key: string; productId: string; quantity: number; selections: 
 type Toast = { message: string; kind: "success" | "error" } | null;
 
 const OpsPage = lazy(() => import("./ops/ui/OpsPage"));
-const OPS_HASH = "#behind-the-counter";
+
+// The owner's pages live under /admin; everything else is the storefront at /.
+const ADMIN_PATH = "/admin";
+const MENU_EDITOR_PATH = "/admin/menu";
+const LEGACY_OPS_HASH = "#behind-the-counter";
+
+function viewFromLocation(): View {
+  const path = window.location.pathname.replace(/\/+$/, "");
+  if (path === MENU_EDITOR_PATH) return "admin";
+  if (path === ADMIN_PATH || window.location.hash === LEGACY_OPS_HASH) return "ops";
+  return "home";
+}
+
+function pathForView(view: View): string {
+  return view === "ops" ? ADMIN_PATH : view === "admin" ? MENU_EDITOR_PATH : "/";
+}
 
 const CATALOG_KEY = "fig-froth-catalog-v1";
 const CART_KEY = "fig-froth-cart-v1";
@@ -51,7 +67,7 @@ function isAvailable(product: Product) {
 function App() {
   const [products, setProducts] = useState<Product[]>(() => readStorage(CATALOG_KEY, initialProducts));
   const [cart, setCart] = useState<CartItem[]>(() => readStorage(CART_KEY, []));
-  const [view, setView] = useState<View>(() => window.location.hash === OPS_HASH ? "ops" : "home");
+  const [view, setView] = useState<View>(viewFromLocation);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [menuCategory, setMenuCategory] = useState("All sips");
   const [search, setSearch] = useState("");
@@ -64,6 +80,8 @@ function App() {
   const [squareReturn, setSquareReturn] = useState(false);
   const [checkoutAvailable, setCheckoutAvailable] = useState<boolean | null>(null);
   const [checkoutEnvironment, setCheckoutEnvironment] = useState("sandbox");
+  const [pickupAvailable, setPickupAvailable] = useState(false);
+  const [placedOrder, setPlacedOrder] = useState<{ number: string; pickupTime: string } | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -72,9 +90,18 @@ function App() {
   useEffect(() => localStorage.setItem(CATALOG_KEY, JSON.stringify(products)), [products]);
   useEffect(() => localStorage.setItem(CART_KEY, JSON.stringify(cart)), [cart]);
   useEffect(() => {
-    if (view === "ops" && window.location.hash !== OPS_HASH) window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}${OPS_HASH}`);
-    if (view !== "ops" && window.location.hash === OPS_HASH) window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`);
+    const legacy = window.location.hash === LEGACY_OPS_HASH;
+    const target = pathForView(view);
+    if (window.location.pathname === target && !legacy) return;
+    const url = `${target}${window.location.search}${legacy ? "" : window.location.hash}`;
+    if (legacy) window.history.replaceState({}, "", url);
+    else window.history.pushState({}, "", url);
   }, [view]);
+  useEffect(() => {
+    const onPopState = () => setView(viewFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("square_checkout") !== "returned") return;
     setSquareReturn(true);
@@ -86,12 +113,13 @@ function App() {
     fetch("/api/checkout/status")
       .then(async (response) => {
         if (!response.ok) throw new Error("Couldn’t check Square checkout availability.");
-        return response.json() as Promise<{ available: boolean; environment: string }>;
+        return response.json() as Promise<{ available: boolean; environment: string; pickupAvailable?: boolean }>;
       })
       .then((status) => {
         if (!active) return;
         setCheckoutAvailable(status.available);
         setCheckoutEnvironment(status.environment);
+        setPickupAvailable(Boolean(status.pickupAvailable));
       })
       .catch(() => {
         if (active) {
@@ -213,6 +241,22 @@ function App() {
       if (!checkoutAttempt.current || checkoutAttempt.current.signature !== signature) {
         checkoutAttempt.current = { signature, key: crypto.randomUUID() };
       }
+      if (!checkoutAvailable && pickupAvailable) {
+        // Online payment isn't connected: send the order to the shop to pay at pickup.
+        const pickupResponse = await fetch("/api/orders/pickup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...checkoutRequest, idempotencyKey: checkoutAttempt.current.key }),
+        });
+        const placed = await pickupResponse.json() as { orderNumber?: string; error?: string };
+        if (!pickupResponse.ok || !placed.orderNumber) throw new Error(placed.error || "Couldn’t place your order. Please try again.");
+        checkoutAttempt.current = null;
+        setPlacedOrder({ number: placed.orderNumber, pickupTime });
+        setCart([]);
+        setIsCheckingOut(false);
+        showView("confirmation");
+        return;
+      }
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,11 +278,28 @@ function App() {
 
   const featured = products.filter((product) => product.featured && isAvailable(product));
 
-  // Behind the Counter is an admin view: it gets its own page without the storefront's header and footer.
-  if (view === "ops") {
+  // The owner's pages (Behind the Counter and the menu editor) sit behind sign-in, without the storefront's header and footer.
+  if (view === "ops" || view === "admin") {
     return (
       <div className="admin-shell">
-        <Suspense fallback={<div className="page-container">Loading…</div>}><OpsPage onExit={() => showView("home")} /></Suspense>
+        <AdminGate onExit={() => showView("home")}>
+          {(signOut) => view === "ops"
+            ? <Suspense fallback={<div className="admin-loading">Loading…</div>}><OpsPage onExit={() => showView("home")} onEditMenu={() => showView("admin")} onSignOut={signOut} /></Suspense>
+            : (
+              <div className="admin-menu-shell">
+                <header className="admin-menu-bar">
+                  <span className="admin-menu-title"><span className="brand-mark"><Leaf size={18} strokeWidth={1.7} /></span> Menu editor</span>
+                  <div className="admin-menu-actions">
+                    <button onClick={() => showView("ops")}><ArrowLeft size={15} /> Behind the counter</button>
+                    <button onClick={() => showView("home")}>View site</button>
+                    <button onClick={signOut}>Sign out</button>
+                  </div>
+                </header>
+                <AdminPage products={products} onUpdate={patchProduct} onAdd={(product) => setProducts((current) => [...current, product])} onReset={() => { setProducts(initialProducts); setToast({ message: "Menu restored to the original catalog.", kind: "success" }); }} />
+              </div>
+            )}
+        </AdminGate>
+        {toast && <div className={`toast toast-${toast.kind}`} role="status"><Check size={17} />{toast.message}<button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={15} /></button></div>}
       </div>
     );
   }
@@ -255,7 +316,6 @@ function App() {
           <button className={view === "home" ? "nav-active" : ""} onClick={() => showView("home")}>Home</button>
           <button className={view === "menu" ? "nav-active" : ""} onClick={() => openMenu()}>The menu</button>
           <button onClick={() => setLocationOpen(true)}>Our little corner <MapPin size={13} /></button>
-          <button onClick={() => showView("ops")}>Behind the counter</button>
         </nav>
         <div className="header-actions">
           <button className="pickup-chip" onClick={() => setLocationOpen(true)}><MapPin size={15} /><span>Pickup · Paterson</span><ChevronDown size={13} /></button>
@@ -269,11 +329,11 @@ function App() {
         {view === "home" && <HomePage products={featured} onShop={() => openMenu()} onSelect={setSelectedProduct} onCategory={openMenu} />}
         {view === "menu" && <MenuPage products={displayedProducts} categories={availableCategories} category={menuCategory} setCategory={setMenuCategory} search={search} setSearch={setSearch} sortOrder={sortOrder} setSortOrder={setSortOrder} onSelect={setSelectedProduct} />}
         {view === "cart" && <CartPage cart={cart} products={productById} blockedItems={blockedCartItems} subtotal={subtotal} tax={tax} total={total} pickupTime={pickupTime} setPickupTime={setPickupTime} coupon={coupon} setCoupon={setCoupon} couponMessage={couponMessage} applyCoupon={applyCoupon} onQuantity={updateQuantity} onMenu={() => openMenu()} onCheckout={() => showView("checkout")} onLocation={() => setLocationOpen(true)} />}
-        {view === "checkout" && <CheckoutPage items={cart} blockedItems={blockedCartItems} pickupTime={pickupTime} checkoutAvailable={checkoutAvailable} environment={checkoutEnvironment} error={checkoutError} isSubmitting={isCheckingOut} onBack={() => showView("cart")} onSubmit={startSquareCheckout} />}
-        {view === "admin" && <AdminPage products={products} onUpdate={patchProduct} onAdd={(product) => setProducts((current) => [...current, product])} onReset={() => { setProducts(initialProducts); setToast({ message: "Menu restored to the original demo catalog.", kind: "success" }); }} />}
+        {view === "confirmation" && placedOrder && <ConfirmationPage order={placedOrder} onMenu={() => openMenu()} />}
+        {view === "checkout" && <CheckoutPage items={cart} blockedItems={blockedCartItems} pickupTime={pickupTime} checkoutAvailable={checkoutAvailable} pickupAvailable={pickupAvailable} environment={checkoutEnvironment} error={checkoutError} isSubmitting={isCheckingOut} onBack={() => showView("cart")} onSubmit={startSquareCheckout} />}
       </main>
 
-      <Footer onAdmin={() => showView("admin")} onMenu={() => openMenu()} />
+      <Footer onAdmin={() => showView("ops")} onMenu={() => openMenu()} />
 
       {selectedProduct && <ProductDialog product={selectedProduct} onClose={() => setSelectedProduct(null)} onAdd={addToCart} />}
       {locationOpen && <LocationDialog onClose={() => setLocationOpen(false)} />}
@@ -403,13 +463,19 @@ function CartPage({ cart, products, blockedItems, subtotal, tax, total, pickupTi
   </section>;
 }
 
-function CheckoutPage({ items, blockedItems, pickupTime, checkoutAvailable, environment, error, isSubmitting, onBack, onSubmit }: { items: CartItem[]; blockedItems: string[]; pickupTime: string; checkoutAvailable: boolean | null; environment: string; error: string; isSubmitting: boolean; onBack: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>, buyer: { name: string; email: string; phone?: string }) => void }) {
+function ConfirmationPage({ order, onMenu }: { order: { number: string; pickupTime: string }; onMenu: () => void }) {
+  return <section className="page-container confirmation-page"><div className="page-heading"><p className="eyebrow">ORDER {order.number}</p><h1>It’s in. <em>Thank you!</em></h1><p>We’re making it now{order.pickupTime === "Next available" ? "" : `, ready ${order.pickupTime.toLowerCase()}`}. Pay at the counter when you pick up in Paterson.</p></div><button className="button button-dark" onClick={onMenu}>Back to the menu <ArrowRight size={16} /></button></section>;
+}
+
+function CheckoutPage({ items, blockedItems, pickupTime, checkoutAvailable, pickupAvailable, environment, error, isSubmitting, onBack, onSubmit }: { items: CartItem[]; blockedItems: string[]; pickupTime: string; checkoutAvailable: boolean | null; pickupAvailable: boolean; environment: string; error: string; isSubmitting: boolean; onBack: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>, buyer: { name: string; email: string; phone?: string }) => void }) {
   const unavailableMessage = checkoutAvailable === null
     ? "Checking Square checkout…"
     : checkoutAvailable
       ? `You’ll pay securely on Square ${environment === "production" ? "checkout" : "Sandbox checkout"}.`
-      : "Square checkout isn’t configured yet. Add your Square sandbox credentials to .env and restart the server.";
-  return <section className="page-container checkout-page"><div className="breadcrumbs"><button onClick={onBack}>Your bag</button><ChevronRight size={14} /><span>Checkout</span></div><div className="page-heading"><p className="eyebrow">ALMOST TIME FOR A TREAT</p><h1>One last <em>little thing.</em></h1><p>Confirm your pickup details, then complete payment securely with Square.</p></div><div className="checkout-layout"><form className="checkout-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); onSubmit(event, { name: String(form.get("name") ?? ""), email: String(form.get("email") ?? ""), phone: String(form.get("tel") ?? "") || undefined }); }}><div className="square-checkout-banner"><ShoppingBag size={17} /><p><strong>Secure payment with Square</strong><br />Card details are entered on Square’s hosted checkout, not on this site.</p></div><h2>Your details</h2><label>Your name<input required name="name" autoComplete="name" maxLength={100} placeholder="First and last name" /></label><label>Email address<input required type="email" name="email" autoComplete="email" maxLength={254} placeholder="you@example.com" /></label><label>Phone number <span>OPTIONAL</span><input type="tel" name="tel" autoComplete="tel" maxLength={30} placeholder="(201) 555-0123" /></label><div className="checkout-pickup"><MapPin size={17} /><span>Pickup in <strong>Paterson, NJ</strong><br /><span className="checkout-pickup-time">{pickupTime === "Next available" ? "As soon as possible" : pickupTime}</span></span></div><p className={`square-availability ${checkoutAvailable ? "is-ready" : ""}`} role="status">{unavailableMessage}</p>{error && <p className="checkout-error" role="alert">{error}</p>}{blockedItems.length > 0 && <p className="checkout-error" role="alert">Please update your bag before checkout: {blockedItems.join(", ")}.</p>}<button className="button button-dark checkout-button" type="submit" disabled={!checkoutAvailable || isSubmitting || items.length === 0 || blockedItems.length > 0}>{isSubmitting ? "Connecting to Square…" : <>Continue to Square <ArrowRight size={16} /></>}</button><p className="checkout-fineprint">Square calculates final taxes and shows your total before payment. Your cart remains available if you return without completing checkout.</p></form><div className="checkout-aside"><div className="checkout-aside-icon">✳</div><h3>Made fresh.<br /><em>Made for you.</em></h3><p>Your sips will be prepared with a little extra love at our Paterson pickup spot.</p><button className="text-button" onClick={onBack}><ArrowLeft size={15} /> Back to your bag</button></div></div></section>;
+      : pickupAvailable
+        ? "Online payment isn’t set up yet, so you’ll pay at the counter when you pick up."
+        : "Square checkout isn’t configured yet. Add your Square sandbox credentials to .env and restart the server.";
+  return <section className="page-container checkout-page"><div className="breadcrumbs"><button onClick={onBack}>Your bag</button><ChevronRight size={14} /><span>Checkout</span></div><div className="page-heading"><p className="eyebrow">ALMOST TIME FOR A TREAT</p><h1>One last <em>little thing.</em></h1><p>Confirm your pickup details, then complete payment securely with Square.</p></div><div className="checkout-layout"><form className="checkout-form" onSubmit={(event) => { const form = new FormData(event.currentTarget); onSubmit(event, { name: String(form.get("name") ?? ""), email: String(form.get("email") ?? ""), phone: String(form.get("tel") ?? "") || undefined }); }}><div className="square-checkout-banner"><ShoppingBag size={17} /><p><strong>Secure payment with Square</strong><br />Card details are entered on Square’s hosted checkout, not on this site.</p></div><h2>Your details</h2><label>Your name<input required name="name" autoComplete="name" maxLength={100} placeholder="First and last name" /></label><label>Email address<input required type="email" name="email" autoComplete="email" maxLength={254} placeholder="you@example.com" /></label><label>Phone number <span>OPTIONAL</span><input type="tel" name="tel" autoComplete="tel" maxLength={30} placeholder="(201) 555-0123" /></label><div className="checkout-pickup"><MapPin size={17} /><span>Pickup in <strong>Paterson, NJ</strong><br /><span className="checkout-pickup-time">{pickupTime === "Next available" ? "As soon as possible" : pickupTime}</span></span></div><p className={`square-availability ${checkoutAvailable ? "is-ready" : ""}`} role="status">{unavailableMessage}</p>{error && <p className="checkout-error" role="alert">{error}</p>}{blockedItems.length > 0 && <p className="checkout-error" role="alert">Please update your bag before checkout: {blockedItems.join(", ")}.</p>}<button className="button button-dark checkout-button" type="submit" disabled={!(checkoutAvailable || pickupAvailable) || isSubmitting || items.length === 0 || blockedItems.length > 0}>{checkoutAvailable ? (isSubmitting ? "Connecting to Square…" : <>Continue to Square <ArrowRight size={16} /></>) : (isSubmitting ? "Placing your order…" : <>Place order · pay at pickup <ArrowRight size={16} /></>)}</button><p className="checkout-fineprint">Square calculates final taxes and shows your total before payment. Your cart remains available if you return without completing checkout.</p></form><div className="checkout-aside"><div className="checkout-aside-icon">✳</div><h3>Made fresh.<br /><em>Made for you.</em></h3><p>Your sips will be prepared with a little extra love at our Paterson pickup spot.</p><button className="text-button" onClick={onBack}><ArrowLeft size={15} /> Back to your bag</button></div></div></section>;
 }
 
 type DraftProduct = { name: string; sku: string; description: string; price: string; salePrice: string; category: string; available: boolean; featured: boolean; stock: string; imageUrl: string; modifiers: ModifierGroup[] };
@@ -470,7 +536,7 @@ function AdminPage({ products, onUpdate, onAdd, onReset }: { products: Product[]
     const product: Product = { id: `item-${Date.now()}`, sku: newDraft.sku.trim(), name: newDraft.name.trim(), description: newDraft.description.trim(), price, salePrice, category: newDraft.category.trim() || "Other", available: newDraft.available, featured: newDraft.featured, stock, imageUrl: imageUrl || undefined, accent: "fig", modifiers: newDraft.modifiers };
     onAdd(product); setNewDraft(blankDraft()); setSaved("New menu item saved to this browser.");
   }
-  return <section className="page-container admin-page"><div className="breadcrumbs"><span>Store tools</span><ChevronRight size={14} /><span>Menu editor</span></div><div className="admin-heading"><div><p className="eyebrow">YOUR MENU, YOUR WAY</p><h1>A little <em>menu magic.</em></h1><p>Edit names, prices, photos, categories, stock and modifiers. Changes are saved in this browser.</p></div><button className="button button-outline" onClick={onReset}>Restore demo menu</button></div><div className="admin-notice"><Sparkles size={18} /><p><strong>Local preview editor</strong> · Changes stay in this browser and do not change what Square charges. The checkout server validates prices and modifiers against <code>src/catalog.ts</code>; update that trusted catalog to change live checkout items.</p></div>{saved && <p className="admin-saved" role="status">{saved}</p>}
+  return <section className="page-container admin-page"><div className="breadcrumbs"><span>Store tools</span><ChevronRight size={14} /><span>Menu editor</span></div><div className="admin-heading"><div><p className="eyebrow">YOUR MENU, YOUR WAY</p><h1>A little <em>menu magic.</em></h1><p>Edit names, prices, photos, categories, stock and modifiers. Changes are saved in this browser.</p></div><button className="button button-outline" onClick={onReset}>Restore original menu</button></div><div className="admin-notice"><Sparkles size={18} /><p><strong>Local preview editor</strong> · Changes stay in this browser and do not change what Square charges. The checkout server validates prices and modifiers against <code>src/catalog.ts</code>; update that trusted catalog to change live checkout items.</p></div>{saved && <p className="admin-saved" role="status">{saved}</p>}
     <div className="admin-list">{products.map((product) => { const draft = drafts[product.id] ?? productToDraft(product); const set = (field: keyof DraftProduct, value: string | boolean | ModifierGroup[]) => setDrafts((current) => ({ ...current, [product.id]: { ...draft, [field]: value } })); return <article className="admin-product" key={product.id}><DrinkArt product={product} className="admin-art" /><div className="admin-fields"><div className="admin-fields-top"><strong>{product.name}</strong><span className="product-category">{product.sku}{product.stock !== undefined ? ` · ${product.stock} in stock` : " · stock untracked"}</span></div><div className="admin-input-grid"><label>Item name<input value={draft.name} onChange={(event) => set("name", event.target.value)} /></label><label>SKU<input value={draft.sku} onChange={(event) => set("sku", event.target.value)} /></label><label className="admin-span">Description<textarea value={draft.description} onChange={(event) => set("description", event.target.value)} rows={2} /></label><label>Price ($)<input type="number" min="0" step="0.01" value={draft.price} onChange={(event) => set("price", event.target.value)} /></label><label>Sale price ($)<input type="number" min="0" step="0.01" placeholder="No sale" value={draft.salePrice} onChange={(event) => set("salePrice", event.target.value)} /></label><label>Menu category<input value={draft.category} onChange={(event) => set("category", event.target.value)} /></label><label>Stock (blank = untracked)<input type="number" min="0" step="1" placeholder="Untracked" value={draft.stock} onChange={(event) => set("stock", event.target.value)} /></label><label className="admin-span">Product photo URL<input type="url" placeholder="https://…" value={draft.imageUrl} onChange={(event) => set("imageUrl", event.target.value)} /></label><div className="admin-span"><ModifierEditor groups={draft.modifiers} onChange={(value) => set("modifiers", value)} /></div><div className="admin-toggles"><label><input type="checkbox" checked={draft.available} onChange={(event) => set("available", event.target.checked)} /> Available</label><label><input type="checkbox" checked={draft.featured} onChange={(event) => set("featured", event.target.checked)} /> Featured</label></div></div><button className="button button-dark admin-save" onClick={() => saveProduct(product.id)}><Check size={15} /> Save item</button></div></article>})}</div>
     <form className="admin-new-form" onSubmit={createProduct}><p className="eyebrow">SOMETHING NEW IS BREWING</p><h2>Add a menu item</h2><div className="admin-input-grid"><label>Item name<input required value={newDraft.name} onChange={(event) => setNewDraft({ ...newDraft, name: event.target.value })} /></label><label>SKU<input required value={newDraft.sku} onChange={(event) => setNewDraft({ ...newDraft, sku: event.target.value })} /></label><label className="admin-span">Description<textarea required rows={2} value={newDraft.description} onChange={(event) => setNewDraft({ ...newDraft, description: event.target.value })} /></label><label>Price ($)<input required type="number" min="0" step="0.01" value={newDraft.price} onChange={(event) => setNewDraft({ ...newDraft, price: event.target.value })} /></label><label>Sale price ($)<input type="number" min="0" step="0.01" value={newDraft.salePrice} onChange={(event) => setNewDraft({ ...newDraft, salePrice: event.target.value })} /></label><label>Menu category<input value={newDraft.category} onChange={(event) => setNewDraft({ ...newDraft, category: event.target.value })} /></label><label>Stock (blank = untracked)<input type="number" min="0" step="1" placeholder="Untracked" value={newDraft.stock} onChange={(event) => setNewDraft({ ...newDraft, stock: event.target.value })} /></label><label className="admin-span">Product photo URL<input type="url" placeholder="https://…" value={newDraft.imageUrl} onChange={(event) => setNewDraft({ ...newDraft, imageUrl: event.target.value })} /></label><div className="admin-span"><ModifierEditor groups={newDraft.modifiers} onChange={(modifiers) => setNewDraft({ ...newDraft, modifiers })} /></div><div className="admin-toggles"><label><input type="checkbox" checked={newDraft.available} onChange={(event) => setNewDraft({ ...newDraft, available: event.target.checked })} /> Available</label><label><input type="checkbox" checked={newDraft.featured} onChange={(event) => setNewDraft({ ...newDraft, featured: event.target.checked })} /> Featured</label></div></div><button className="button button-dark" type="submit"><Plus size={16} /> Add item to menu</button></form>
   </section>;
@@ -522,7 +588,7 @@ function LocationDialog({ onClose }: { onClose: () => void }) {
 }
 
 function Footer({ onAdmin, onMenu }: { onAdmin: () => void; onMenu: () => void }) {
-  return <footer className="site-footer"><div className="footer-main"><div className="footer-brand"><a className="wordmark footer-wordmark" href="#home"><span className="brand-mark"><Leaf size={21} /></span><span className="brand-name">fig <i>&</i> froth<span className="brand-period">.</span><small>SMALL BATCH, BIG COMFORT</small></span></a><p>Little sips, lovingly made.<br />Always happy you’re here.</p><a className="footer-instagram" href="https://www.instagram.com/figandfroth" target="_blank" rel="noreferrer"><Instagram size={17} /> Come say hi on Instagram <ArrowRight size={14} /></a></div><div className="footer-links"><div><p className="eyebrow">COME ON IN</p><button onClick={onMenu}>The menu</button><a href="mailto:figandfroth@gmail.com">Send us a note</a><span>Paterson, NJ</span></div><div><p className="eyebrow">A QUICK NOTE</p><span>Made fresh, to order.</span><span>Pickup in Paterson.</span><button className="admin-link" onClick={onAdmin}>Edit the menu</button></div></div><div className="footer-illustration">✿</div></div><div className="footer-bottom"><span>© 2026 Fig & Froth · Made with a little love.</span><span className="footer-payments">CASH APP&nbsp;&nbsp; · &nbsp;&nbsp;APPLE PAY&nbsp;&nbsp; · &nbsp;&nbsp;VISA&nbsp;&nbsp; · &nbsp;&nbsp;MASTERCARD</span><span>Preview store · Payments not connected</span></div></footer>;
+  return <footer className="site-footer"><div className="footer-main"><div className="footer-brand"><a className="wordmark footer-wordmark" href="#home"><span className="brand-mark"><Leaf size={21} /></span><span className="brand-name">fig <i>&</i> froth<span className="brand-period">.</span><small>SMALL BATCH, BIG COMFORT</small></span></a><p>Little sips, lovingly made.<br />Always happy you’re here.</p><a className="footer-instagram" href="https://www.instagram.com/figandfroth" target="_blank" rel="noreferrer"><Instagram size={17} /> Come say hi on Instagram <ArrowRight size={14} /></a></div><div className="footer-links"><div><p className="eyebrow">COME ON IN</p><button onClick={onMenu}>The menu</button><a href="mailto:figandfroth@gmail.com">Send us a note</a><span>Paterson, NJ</span></div><div><p className="eyebrow">A QUICK NOTE</p><span>Made fresh, to order.</span><span>Pickup in Paterson.</span><button className="admin-link" onClick={onAdmin}>Staff sign-in</button></div></div><div className="footer-illustration">✿</div></div><div className="footer-bottom"><span>© 2026 Fig & Froth · Made with a little love.</span><span className="footer-payments">CASH APP&nbsp;&nbsp; · &nbsp;&nbsp;APPLE PAY&nbsp;&nbsp; · &nbsp;&nbsp;VISA&nbsp;&nbsp; · &nbsp;&nbsp;MASTERCARD</span><span>Preview store · Payments not connected</span></div></footer>;
 }
 
 export default App;
