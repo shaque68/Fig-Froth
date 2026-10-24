@@ -234,6 +234,15 @@ function App() {
 
   const featured = products.filter((product) => product.featured && isAvailable(product));
 
+  // Behind the Counter is an admin view: it gets its own page without the storefront's header and footer.
+  if (view === "ops") {
+    return (
+      <div className="admin-shell">
+        <Suspense fallback={<div className="page-container">Loading…</div>}><OpsPage onExit={() => showView("home")} /></Suspense>
+      </div>
+    );
+  }
+
   return (
     <div className="site-shell">
       <div className="announcement"><Sparkles size={13} /> A little ritual, a lot of joy <span>·</span> Paterson, NJ</div>
@@ -246,7 +255,7 @@ function App() {
           <button className={view === "home" ? "nav-active" : ""} onClick={() => showView("home")}>Home</button>
           <button className={view === "menu" ? "nav-active" : ""} onClick={() => openMenu()}>The menu</button>
           <button onClick={() => setLocationOpen(true)}>Our little corner <MapPin size={13} /></button>
-          <button className={view === "ops" ? "nav-active" : ""} onClick={() => showView("ops")}>Behind the counter</button>
+          <button onClick={() => showView("ops")}>Behind the counter</button>
         </nav>
         <div className="header-actions">
           <button className="pickup-chip" onClick={() => setLocationOpen(true)}><MapPin size={15} /><span>Pickup · Paterson</span><ChevronDown size={13} /></button>
@@ -261,7 +270,6 @@ function App() {
         {view === "menu" && <MenuPage products={displayedProducts} categories={availableCategories} category={menuCategory} setCategory={setMenuCategory} search={search} setSearch={setSearch} sortOrder={sortOrder} setSortOrder={setSortOrder} onSelect={setSelectedProduct} />}
         {view === "cart" && <CartPage cart={cart} products={productById} blockedItems={blockedCartItems} subtotal={subtotal} tax={tax} total={total} pickupTime={pickupTime} setPickupTime={setPickupTime} coupon={coupon} setCoupon={setCoupon} couponMessage={couponMessage} applyCoupon={applyCoupon} onQuantity={updateQuantity} onMenu={() => openMenu()} onCheckout={() => showView("checkout")} onLocation={() => setLocationOpen(true)} />}
         {view === "checkout" && <CheckoutPage items={cart} blockedItems={blockedCartItems} pickupTime={pickupTime} checkoutAvailable={checkoutAvailable} environment={checkoutEnvironment} error={checkoutError} isSubmitting={isCheckingOut} onBack={() => showView("cart")} onSubmit={startSquareCheckout} />}
-        {view === "ops" && <Suspense fallback={<div className="page-container">Loading the demo…</div>}><OpsPage /></Suspense>}
         {view === "admin" && <AdminPage products={products} onUpdate={patchProduct} onAdd={(product) => setProducts((current) => [...current, product])} onReset={() => { setProducts(initialProducts); setToast({ message: "Menu restored to the original demo catalog.", kind: "success" }); }} />}
       </main>
 

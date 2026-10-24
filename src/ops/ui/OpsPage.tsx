@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, CloudSun, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
+import { ArrowLeft, BellRing, CloudSun, Leaf, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Thermometer, X } from "lucide-react";
 import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
 import { formatStockDays, needsAttention, statusLabel, statusTone, summarizePantry } from "../engine/pantry";
@@ -88,7 +88,7 @@ function PoGroup({ title, pos, today, onApprove, onReject, onWrite, empty }: { t
   );
 }
 
-export default function OpsPage() {
+export default function OpsPage({ onExit }: { onExit?: () => void }) {
   const [seed, setSeed] = useState(DEFAULT_SEED);
   const [seedDraft, setSeedDraft] = useState(String(DEFAULT_SEED));
   const [scenarioId, setScenarioId] = useState("normal");
@@ -278,16 +278,23 @@ export default function OpsPage() {
 
       <div className="ops-controls" id="ops-controls" role="region" aria-label="Controls">
         <div className="ops-controls-bar">
-          <div className="ops-clock">
-            <strong>{formatDay(world.day, "long")}</strong>
-            <span>{world.queue.length === 0 ? "Closed for the night" : formatClock(world.minute)}</span>
-            <span className="ops-weather"><WeatherIcon tempF={world.conditions.tempF} /> {world.conditions.tempF}°F</span>
+          <div className="admin-bar-start">
+            <span className="admin-brand">
+              <span className="brand-mark" aria-hidden="true"><Leaf size={18} strokeWidth={1.7} /></span>
+              <span className="admin-brand-name"><span>fig <i>&amp;</i> froth</span><small>Behind the counter</small></span>
+            </span>
+            <div className="ops-clock">
+              <strong>{formatDay(world.day, "long")}</strong>
+              <span>{world.queue.length === 0 ? "Closed for the night" : formatClock(world.minute)}</span>
+              <span className="ops-weather"><WeatherIcon tempF={world.conditions.tempF} /> {world.conditions.tempF}°F</span>
+            </div>
           </div>
           <div className="ops-controls-bar-actions">
             {running && !controlsOpen && <button className="ops-button" onClick={() => setRun(null)}><Pause size={17} /> Pause</button>}
             <button className="ops-button ops-controls-toggle" aria-expanded={controlsOpen} aria-controls="ops-controls-panel" onClick={() => setControlsOpen(!controlsOpen)}>
               <SlidersHorizontal size={16} /> {controlsOpen ? "Hide controls" : "Controls"}
             </button>
+            {onExit && <button className="ops-button ops-exit" onClick={onExit}><ArrowLeft size={16} /> Back to site</button>}
           </div>
         </div>
         {controlsOpen && <div className="ops-controls-panel" id="ops-controls-panel">
