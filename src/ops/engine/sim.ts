@@ -64,6 +64,7 @@ export type PoLine = {
   packs: number;
   packSize: number;
   packLabel: string;
+  brand: string;
   packPriceCents: number;
   /** Base-tier pack price, so bulk savings can be shown. */
   basePackPriceCents: number;

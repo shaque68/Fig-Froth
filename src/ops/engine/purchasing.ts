@@ -38,6 +38,7 @@ export function makeLine(world: World, supplierId: string, ingredientId: string,
     packs,
     packSize: offer.packSize,
     packLabel: offer.packLabel,
+    brand: offer.brand,
     packPriceCents: packPrice,
     basePackPriceCents: adjustedPrice(world, supplierId, offer.tiers[0].packPriceCents),
     totalCents: packPrice * packs,
@@ -47,19 +48,20 @@ export function makeLine(world: World, supplierId: string, ingredientId: string,
 
 const pluralWord = (word: string) => (/(ch|sh|x|s)$/.test(word) ? `${word}es` : `${word}s`);
 
-/** "2 sleeves of lids", "18 gallon jugs of whole milk", "5 pouches (1 L each) of mango purée". */
-export function packPhrase(count: number, packLabel: string, ingredientName: string): string {
+/** "2 sleeves of Dart lids", "18 gallon jugs of Horizon Organic whole milk", "5 bottles (1 L each) of Monin mango purée". */
+export function packPhrase(count: number, packLabel: string, ingredientName: string, brand?: string): string {
   const [unit] = packLabel.split(" of ");
   const sized = unit.match(/^([\d.]+ (?:g|kg|ml|L)) (.+)$/);
   const noun = sized ? sized[2] : unit;
   const words = noun.split(" ");
   if (count !== 1) words[words.length - 1] = pluralWord(words[words.length - 1]);
   const size = sized ? ` (${sized[1]}${count === 1 ? "" : " each"})` : "";
-  return `${count} ${words.join(" ")}${size} of ${ingredientName.toLowerCase()}`;
+  const product = brand && brand !== "Unbranded" ? `${brand} ${ingredientName.toLowerCase()}` : ingredientName.toLowerCase();
+  return `${count} ${words.join(" ")}${size} of ${product}`;
 }
 
 export function describeLine(line: PoLine): string {
-  return `${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name)} (${formatQty(line.ingredientId, line.packs * line.packSize)})`;
+  return `${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name, line.brand)} (${formatQty(line.ingredientId, line.packs * line.packSize)})`;
 }
 
 // ── Guardrails ────────────────────────────────────────────────────────────────
@@ -140,7 +142,7 @@ export function approvePo(world: World, poId: string): boolean {
   if (!po || po.status !== "awaiting") return false;
   po.approvedBy = "you";
   po.status = "approved";
-  addLog(world, "you", `You approved ${po.id} (${formatCents(po.totalCents)})`, `${getSupplier(po.supplierId).name}. Sent to the supplier (simulated).`, po.id);
+  addLog(world, "you", `You approved ${po.id} (${formatCents(po.totalCents)})`, `${getSupplier(po.supplierId).name}. Sent to the supplier.`, po.id);
   sendPo(world, po);
   return true;
 }

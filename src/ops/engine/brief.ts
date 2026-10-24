@@ -25,12 +25,12 @@ export function buildSnapshot(world: World, poId?: string) {
     total: formatCents(order.totalCents),
     shipping: order.shippingCents === 0 ? "free" : formatCents(order.shippingCents),
     due: formatDay(order.promisedDay),
-    lines: order.lines.map((line) => `${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name)} at ${formatCents(line.packPriceCents)} each`),
+    lines: order.lines.map((line) => `${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name, line.brand)} at ${formatCents(line.packPriceCents)} each`),
     reasons: order.reasons.map((reason) => `${reason.rule}: ${reason.text}`),
     savings: { bulkDiscount: formatCents(order.savings.bulkCents), shippingAvoided: formatCents(order.savings.shippingAvoidedCents) },
   });
   return {
-    note: "Demo with fictional, simulated data.",
+    note: "All numbers are simulated.",
     shop: "Fig & Froth, a small matcha bar",
     today: formatDay(world.day, "long"),
     weatherF: world.conditions.tempF,
@@ -96,7 +96,7 @@ export function demoExplanation(po: PurchaseOrder): string {
 /** Demo-mode draft message to a supplier. Never sent anywhere. */
 export function demoSupplierMessage(po: PurchaseOrder): string {
   const supplier = getSupplier(po.supplierId);
-  const lines = po.lines.map((line) => `- ${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name)} at ${formatCents(line.packPriceCents)} each`);
+  const lines = po.lines.map((line) => `- ${packPhrase(line.packs, line.packLabel, getIngredient(line.ingredientId).name, line.brand)} at ${formatCents(line.packPriceCents)} each`);
   const late = po.lateNoticeDay !== undefined && !po.isBackup
     ? `\n\nWe saw that ${po.id} is running late. Could you confirm the new delivery date? We’ve arranged a backup in the meantime.`
     : "";

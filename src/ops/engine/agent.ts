@@ -53,7 +53,7 @@ function route(world: World, po: PurchaseOrder): "sent" | "awaiting" {
   po.status = "approved";
   sendPo(world, po);
   const why = po.needsApproval ? "approved the same day (30-day comparison run)" : `under the ${formatDollars(SETTINGS.approvalThresholdCents)} limit, so it went out automatically`;
-  addLog(world, "agent", `Sent ${po.id} to ${getSupplier(po.supplierId).name} (simulated)`, `${formatCents(po.totalCents)}, ${why}. Due ${po.promisedDay - world.day === 1 ? "tomorrow" : `in ${po.promisedDay - world.day} days`}.`, po.id);
+  addLog(world, "agent", `Sent ${po.id} to ${getSupplier(po.supplierId).name}`, `${formatCents(po.totalCents)}, ${why}. Due ${po.promisedDay - world.day === 1 ? "tomorrow" : `in ${po.promisedDay - world.day} days`}.`, po.id);
   return "sent";
 }
 

@@ -69,10 +69,10 @@ export function takeaway(simple: PolicyResult, smart: PolicyResult, days: number
   const missed = simple.drinksMissed - smart.drinksMissed;
   const stockouts = missed > 0
     ? ` and ${missed} fewer drinks we couldn’t make`
-    : missed < 0 ? `, though it missed ${-missed} more drinks` : smart.drinksMissed === 0 ? ", with no drinks missed either way" : "";
-  if (saved <= 0) return `Over ${days} simulated days, smarter ordering cost ${formatDollars(-saved)} more than simple ordering${stockouts}.`;
+    : missed < 0 ? `, though it misses ${-missed} more drinks` : smart.drinksMissed === 0 ? ", with no drinks missed either way" : "";
+  if (saved <= 0) return `Over ${days} days, smarter ordering costs ${formatDollars(-saved)} more than simple ordering${stockouts}.`;
   const biggest = shippingSaved >= saved / 2 ? `, mostly by avoiding ${formatDollars(shippingSaved)} in shipping fees` : `, mostly through bulk prices`;
-  return `Over ${days} simulated days, smarter ordering spent ${formatDollars(saved)} less (${Math.round((saved / simpleCost) * 100)}%)${biggest}${stockouts}.`;
+  return `Over ${days} days, smarter ordering spends ${formatDollars(saved)} less (${Math.round((saved / simpleCost) * 100)}%)${biggest}${stockouts}.`;
 }
 
 /** Honest footnote: bulk buying can mean more stock on the shelf. */

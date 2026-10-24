@@ -44,7 +44,7 @@ export function threeWayMatch(po: PurchaseOrder): MatchResult {
     if (billed.packs > received) {
       const extra = (billed.packs - received) * billed.packPriceCents;
       overchargeCents += extra;
-      notes.push(`Billed for ${packPhrase(billed.packs, line.packLabel, name)}, but only ${received} arrived: ${formatCents(extra)} too much.`);
+      notes.push(`Billed for ${packPhrase(billed.packs, line.packLabel, name, line.brand)}, but only ${received} arrived: ${formatCents(extra)} too much.`);
     } else if (received < line.packs) {
       notes.push(`${name}: ${line.packs - received} short, but not billed for them.`);
     }
@@ -82,7 +82,7 @@ export function resolveInvoice(world: World, poId: string, decision: "accept" | 
   if (!po || po.status !== "flagged" || !po.invoice) return false;
   const result = threeWayMatch(po);
   po.status = decision === "accept" ? "matched" : "disputed";
-  po.matchNotes = [...(po.matchNotes ?? []), decision === "accept" ? "You accepted the invoice as billed." : `You disputed ${formatCents(result.overchargeCents)} with the supplier (simulated).`];
-  addLog(world, "you", decision === "accept" ? `You accepted the ${po.id} invoice as billed` : `You disputed the ${po.id} invoice`, decision === "accept" ? `${formatCents(po.invoice.totalCents)} approved for payment.` : `Asked ${getSupplier(po.supplierId).name} to correct ${formatCents(result.overchargeCents)} (simulated; nothing is sent).`, po.id);
+  po.matchNotes = [...(po.matchNotes ?? []), decision === "accept" ? "You accepted the invoice as billed." : `You disputed ${formatCents(result.overchargeCents)} with the supplier.`];
+  addLog(world, "you", decision === "accept" ? `You accepted the ${po.id} invoice as billed` : `You disputed the ${po.id} invoice`, decision === "accept" ? `${formatCents(po.invoice.totalCents)} approved for payment.` : `Asked ${getSupplier(po.supplierId).name} to correct ${formatCents(result.overchargeCents)}.`, po.id);
   return true;
 }

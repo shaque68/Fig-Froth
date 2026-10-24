@@ -9,7 +9,7 @@ export const PO_STATUS_LABEL: Record<PoStatus, string> = {
   draft: "Draft",
   awaiting: "Awaiting approval",
   approved: "Approved",
-  sent: "Sent (simulated)",
+  sent: "Sent",
   received: "Received",
   invoiced: "Invoiced",
   matched: "Matched",
@@ -50,7 +50,7 @@ export function PoCard({ po, today, onApprove, onReject, onWrite, defaultOpen = 
               <td>
                 <strong className="po-line-name">{getIngredient(line.ingredientId).name}</strong>
                 {ROLE_LABEL[line.role] && <span className="po-role">{ROLE_LABEL[line.role]}</span>}
-                <span className="po-line-qty">{line.packs} × {line.packLabel} · {formatQty(line.ingredientId, line.packs * line.packSize)}</span>
+                <span className="po-line-qty">{line.brand && line.brand !== "Unbranded" ? `${line.brand} · ` : ""}{line.packs} × {line.packLabel} · {formatQty(line.ingredientId, line.packs * line.packSize)}</span>
               </td>
               <td className="num">{formatCents(line.packPriceCents)}{line.packPriceCents < line.basePackPriceCents && <del>{formatCents(line.basePackPriceCents)}</del>}</td>
               <td className="num">{formatCents(line.totalCents)}</td>

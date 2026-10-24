@@ -44,14 +44,14 @@ export function InvoicePanel({ world, onResolve }: { world: World; onResolve: (i
   return (
     <div className="invoices">
       <p className="compare-takeaway">{takeaway}</p>
-      <p className="ops-muted compare-sub">Three-way match: what we ordered, what arrived, and what the supplier billed should all agree. Receipts and invoices are simulated, with a few deliberate mistakes.</p>
+      <p className="ops-muted compare-sub">Three-way match: what we ordered, what arrived, and what the supplier billed should all agree. Anything that doesn’t is held for your review.</p>
       {flagged.map((po) => (
         <article key={po.id} className="match-card is-flagged">
           <header className="po-head"><div><h3>{po.id} · {getSupplier(po.supplierId).name}</h3><p className="po-dates">Arrived {formatDay(po.receivedDay ?? po.arrivalDay)} · billed {formatCents(po.invoice!.totalCents)} vs ordered {formatCents(po.totalCents)}</p></div><span className="po-status po-status-flagged">Needs review</span></header>
           <ul className="po-match is-flagged">{(po.matchNotes ?? []).map((note, index) => <li key={index}>{note}</li>)}</ul>
           <MatchTable po={po} />
           <div className="po-actions">
-            <button className="ops-button ops-button-primary" onClick={() => onResolve(po.id, "dispute")}>Dispute with supplier (simulated)</button>
+            <button className="ops-button ops-button-primary" onClick={() => onResolve(po.id, "dispute")}>Dispute with supplier</button>
             <button className="ops-button" onClick={() => onResolve(po.id, "accept")}>Accept as billed</button>
           </div>
         </article>

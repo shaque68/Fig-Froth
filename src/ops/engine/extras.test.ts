@@ -27,7 +27,7 @@ test("each scenario makes the agent do something different and explainable", () 
   const iced = runPolicy(2026, "heat-wave", "smart", 7).days.reduce((sum, day) => sum + day.drinksMade, 0);
   assert.ok(iced > 0);
 
-  assert.match(logFor("price-increase"), /Orchard Lane[^\n]*culinary matcha|culinary matcha[^\n]*Orchard Lane|cheaper from Orchard Lane/);
+  assert.match(logFor("price-increase"), /WebstaurantStore[^\n]*culinary matcha|culinary matcha[^\n]*WebstaurantStore|cheaper from WebstaurantStore/);
   assert.match(logFor("late-delivery"), /is late/);
   assert.match(logFor("late-delivery"), /Drafted backup PO-\d+/);
   assert.match(logFor("near-expiry"), /use it up/);
@@ -81,11 +81,11 @@ test("profit per drink: cost from current prices, and a price rise shows which d
     assert.ok(Number.isInteger(profit.costCents) && profit.costCents > 0);
     assert.equal(profit.marginCents, profit.priceCents - profit.costCents);
   }
-  const pricier = drinkProfits(world, { supplierId: "mossy-hill", percent: 50 });
+  const pricier = drinkProfits(world, { supplierId: "ippodo", percent: 50 });
   const classic = (list: typeof base) => list.find((profit) => profit.drink.id === "classic-matcha")!;
   assert.ok(classic(pricier).costCents > classic(base).costCents);
   assert.ok(marginLosers(base, pricier).every((profit) => profit.margin < TARGET_MARGIN));
-  // Culinary matcha switches to Orchard Lane once Mossy Hill is pricier, which caps the hit.
+  // Culinary matcha switches to WebstaurantStore once Ippodo Tea is pricier, which caps the hit.
   const raised = createScenarioWorld(2026, "price-increase");
   const state = itemState(raised, getIngredient("culinary-matcha"));
   assert.ok(state.usage > 0);
@@ -93,7 +93,7 @@ test("profit per drink: cost from current prices, and a price rise shows which d
 
 test("three-way match catches short shipments, price slips, and surprise shipping", () => {
   const po: PurchaseOrder = {
-    id: "PO-T", supplierId: "paper-crane", status: "invoiced", subtotalCents: 0, shippingCents: 0, totalCents: 0, reasons: [],
+    id: "PO-T", supplierId: "imperial-dade", status: "invoiced", subtotalCents: 0, shippingCents: 0, totalCents: 0, reasons: [],
     createdDay: 0, promisedDay: 4, arrivalDay: 4, needsApproval: false, savings: { bulkCents: 0, shippingAvoidedCents: 0 },
     lines: [
       { ingredientId: "lids", packs: 6, packSize: 100, packLabel: "sleeve of 100", packPriceCents: 1050, basePackPriceCents: 1200, totalCents: 6300, role: "needed" },
@@ -135,7 +135,7 @@ test("smarter ordering misses no more drinks than simple ordering in any scenari
 test("smarter ordering never deliberately plans an unapproved supplier", () => {
   const world = createScenarioWorld(2026, "price-increase");
   const plan = planSmart(world);
-  assert.ok(plan.pos.every((po) => po.supplierId !== "bargain-leaf"));
+  assert.ok(plan.pos.every((po) => po.supplierId !== "amazon-seller"));
 });
 
 test("demo-mode writing comes from templates and uses only engine numbers", async () => {
@@ -145,7 +145,7 @@ test("demo-mode writing comes from templates and uses only engine numbers", asyn
   assert.match(brief, /^Good morning! It’s Thursday, June 4/);
   assert.match(brief, /Yesterday we made \d+ drinks/);
   const po = world.purchaseOrders[0];
-  assert.match(demoExplanation(po), new RegExp(`^This \\$[\\d,.]+ order to ${po.supplierId === "little-meadow" ? "Little Meadow Dairy" : ".+"}`));
+  assert.match(demoExplanation(po), new RegExp(`^This \\$[\\d,.]+ order to ${po.supplierId === "restaurant-depot" ? "Restaurant Depot" : ".+"}`));
   const message = demoSupplierMessage(po);
   assert.match(message, /^Hi .+ team,/);
   assert.ok(!/@|\bphone\b|\d{3}-\d{4}/.test(message), "no contact details in the draft");

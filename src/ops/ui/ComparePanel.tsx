@@ -68,10 +68,10 @@ export function ComparePanel({ seed, scenarioId }: { seed: number; scenarioId: s
   return (
     <div className="compare">
       <p className="compare-takeaway">{result.takeaway}</p>
-      <p className="ops-muted compare-sub">Simulated over {result.days} days · seed {seed} · {getScenario(scenarioId).name}. Same customers, same weather; only the ordering rules change. Orders that need approval are approved the same day.</p>
+      <p className="ops-muted compare-sub">Same {result.days} days{scenarioId === "normal" ? "" : ` (${getScenario(scenarioId).name.toLowerCase()})`}, same customers, same weather: only the ordering rules change. Orders that need approval are approved the same day.</p>
       <CostChart rows={[simple, smart]} />
       <table className="ops-table compare-table">
-        <caption className="sr-only">Simple vs smarter ordering, simulated over {result.days} days</caption>
+        <caption className="sr-only">Simple vs smarter ordering over {result.days} days</caption>
         <thead><tr><th scope="col">Over {result.days} days</th><th scope="col" className="num">Simple ordering</th><th scope="col" className="num">Smarter ordering</th></tr></thead>
         <tbody>
           {rows.map((row) => (

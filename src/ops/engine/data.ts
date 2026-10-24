@@ -1,5 +1,6 @@
-// Fake data for the "Behind the Counter" demo. Drink names and prices mirror the
-// storefront menu; every recipe, stock level, supplier, and price below is fictional.
+// Data for the Behind the Counter console. Drink names and prices mirror the storefront menu.
+// Supplier and product names are real brands, but every price, lead time, stock level, and
+// recipe amount here is simulated, as is everything that happens in the simulation.
 import { initialProducts } from "../../catalog.ts";
 
 export type Unit = "g" | "ml" | "each";
@@ -40,6 +41,8 @@ export type SupplierOffer = {
   ingredientId: string;
   packSize: number;
   packLabel: string;
+  /** The product brand this supplier sells, e.g. "Monin" or "Oatly Barista Edition". */
+  brand: string;
   tiers: PriceTier[];
 };
 
@@ -64,20 +67,20 @@ export const SHELVES: Array<{ id: Shelf; name: string }> = [
 ];
 
 export const INGREDIENTS: Ingredient[] = [
-  { id: "ceremonial-matcha", name: "Ceremonial matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 45, color: "#6f8f52", homeSupplierId: "mossy-hill" },
-  { id: "culinary-matcha", name: "Culinary matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 60, color: "#93a26a", homeSupplierId: "mossy-hill" },
-  { id: "whole-milk", name: "Whole milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 10, color: "#e2d5b6", homeSupplierId: "little-meadow" },
-  { id: "oat-milk", name: "Oat milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 30, color: "#dcc9a3", homeSupplierId: "little-meadow" },
-  { id: "foam-cream", name: "Cold foam cream", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 14, color: "#eadcc0", homeSupplierId: "little-meadow" },
-  { id: "fig-syrup", name: "Fig syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 30, color: "#8c5a6a", homeSupplierId: "orchard-lane" },
-  { id: "strawberry-puree", name: "Strawberry purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#cf7f8b", homeSupplierId: "orchard-lane" },
-  { id: "mango-puree", name: "Mango purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#e3ac4b", homeSupplierId: "orchard-lane" },
-  { id: "banana-syrup", name: "Banana syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 21, color: "#e4c870", homeSupplierId: "orchard-lane" },
-  { id: "rose-syrup", name: "Rose-cardamom syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 45, color: "#cf9a98", homeSupplierId: "orchard-lane" },
-  { id: "cold-cups", name: "Iced cups", unit: "each", countNoun: "cups", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#c9d8cf", homeSupplierId: "paper-crane" },
-  { id: "hot-cups", name: "Hot cups", unit: "each", countNoun: "cups", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#d8c3a2", homeSupplierId: "paper-crane" },
-  { id: "lids", name: "Lids", unit: "each", countNoun: "lids", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#b7beb0", homeSupplierId: "paper-crane" },
-  { id: "straws", name: "Straws", unit: "each", countNoun: "straws", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#9db39a", homeSupplierId: "paper-crane" },
+  { id: "ceremonial-matcha", name: "Ceremonial matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 45, color: "#6f8f52", homeSupplierId: "ippodo" },
+  { id: "culinary-matcha", name: "Culinary matcha", unit: "g", shelf: "matcha", vessel: "tin", freshnessDays: 60, color: "#93a26a", homeSupplierId: "ippodo" },
+  { id: "whole-milk", name: "Whole milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 10, color: "#e2d5b6", homeSupplierId: "restaurant-depot" },
+  { id: "oat-milk", name: "Oat milk", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 30, color: "#dcc9a3", homeSupplierId: "restaurant-depot" },
+  { id: "foam-cream", name: "Cold foam cream", unit: "ml", shelf: "dairy", vessel: "carton", freshnessDays: 14, color: "#eadcc0", homeSupplierId: "restaurant-depot" },
+  { id: "fig-syrup", name: "Fig syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 30, color: "#8c5a6a", homeSupplierId: "webstaurant" },
+  { id: "strawberry-puree", name: "Strawberry purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#cf7f8b", homeSupplierId: "webstaurant" },
+  { id: "mango-puree", name: "Mango purée", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 7, color: "#e3ac4b", homeSupplierId: "webstaurant" },
+  { id: "banana-syrup", name: "Banana syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 21, color: "#e4c870", homeSupplierId: "webstaurant" },
+  { id: "rose-syrup", name: "Rose syrup", unit: "ml", shelf: "flavors", vessel: "jar", freshnessDays: 45, color: "#cf9a98", homeSupplierId: "webstaurant" },
+  { id: "cold-cups", name: "Iced cups", unit: "each", countNoun: "cups", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#c9d8cf", homeSupplierId: "imperial-dade" },
+  { id: "hot-cups", name: "Hot cups", unit: "each", countNoun: "cups", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#d8c3a2", homeSupplierId: "imperial-dade" },
+  { id: "lids", name: "Lids", unit: "each", countNoun: "lids", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#b7beb0", homeSupplierId: "imperial-dade" },
+  { id: "straws", name: "Straws", unit: "each", countNoun: "straws", shelf: "packaging", vessel: "box", freshnessDays: null, color: "#9db39a", homeSupplierId: "imperial-dade" },
 ];
 
 const priceOf = (productId: string) => {
@@ -101,59 +104,59 @@ export const DRINKS: Drink[] = [
   drink("sha3r-matcha", 12, 0, 200, [{ ingredientId: "culinary-matcha", amount: 4 }, { ingredientId: "rose-syrup", amount: 20 }, { ingredientId: "foam-cream", amount: 40 }]),
 ];
 
-const offer = (ingredientId: string, packSize: number, packLabel: string, tiers: Array<[number, number]>): SupplierOffer => ({
-  ingredientId, packSize, packLabel, tiers: tiers.map(([minPacks, packPriceCents]) => ({ minPacks, packPriceCents })),
+const offer = (ingredientId: string, brand: string, packSize: number, packLabel: string, tiers: Array<[number, number]>): SupplierOffer => ({
+  ingredientId, brand, packSize, packLabel, tiers: tiers.map(([minPacks, packPriceCents]) => ({ minPacks, packPriceCents })),
 });
 
 export const SUPPLIERS: Supplier[] = [
   {
-    id: "mossy-hill", name: "Mossy Hill Tea Co.", approved: true, leadDays: 5, shippingCents: 2500, freeShippingAtCents: 40000, orderCycleDays: 10,
-    blurb: "Our matcha specialist. Best prices on matcha, but it ships from far away.",
+    id: "ippodo", name: "Ippodo Tea", approved: true, leadDays: 5, shippingCents: 2500, freeShippingAtCents: 40000, orderCycleDays: 10,
+    blurb: "Our matcha, from Kyoto. Best prices on matcha, but the longest wait.",
     offers: [
-      offer("ceremonial-matcha", 500, "500 g bag", [[1, 15000], [4, 13800], [8, 12900]]),
-      offer("culinary-matcha", 1000, "1 kg bag", [[1, 9000], [3, 8200]]),
+      offer("ceremonial-matcha", "Ippodo", 500, "500 g bag", [[1, 15000], [4, 13800], [8, 12900]]),
+      offer("culinary-matcha", "Ippodo", 1000, "1 kg bag", [[1, 9000], [3, 8200]]),
     ],
   },
   {
-    id: "little-meadow", name: "Little Meadow Dairy", approved: true, leadDays: 1, shippingCents: 1200, freeShippingAtCents: 8000, orderCycleDays: 3,
-    blurb: "Local dairy. Next-day delivery on milk and cream.",
+    id: "restaurant-depot", name: "Restaurant Depot", approved: true, leadDays: 1, shippingCents: 1200, freeShippingAtCents: 8000, orderCycleDays: 3,
+    blurb: "Next-day delivery on milk, cream, and oat milk.",
     offers: [
-      offer("whole-milk", 3785, "gallon jug", [[1, 520], [12, 470]]),
-      offer("oat-milk", 5676, "case of 6 cartons", [[1, 2400], [4, 2250]]),
-      offer("foam-cream", 1893, "half-gallon carton", [[1, 900], [8, 820]]),
+      offer("whole-milk", "Horizon Organic", 3785, "gallon jug", [[1, 520], [12, 470]]),
+      offer("oat-milk", "Oatly Barista Edition", 5676, "case of 6 cartons", [[1, 2400], [4, 2250]]),
+      offer("foam-cream", "Horizon Organic", 1893, "half-gallon carton", [[1, 900], [8, 820]]),
     ],
   },
   {
-    id: "orchard-lane", name: "Orchard Lane Provisions", approved: true, leadDays: 2, shippingCents: 1800, freeShippingAtCents: 15000, orderCycleDays: 5,
-    blurb: "Syrups and purées, plus a few backup basics at a higher price.",
+    id: "webstaurant", name: "WebstaurantStore", approved: true, leadDays: 2, shippingCents: 1800, freeShippingAtCents: 15000, orderCycleDays: 5,
+    blurb: "Monin syrups and purées, plus backup basics at a higher price.",
     offers: [
-      offer("fig-syrup", 750, "750 ml bottle", [[1, 1400], [6, 1250]]),
-      offer("strawberry-puree", 1000, "1 L pouch", [[1, 1200], [6, 1080]]),
-      offer("mango-puree", 1000, "1 L pouch", [[1, 1300], [6, 1170]]),
-      offer("banana-syrup", 750, "750 ml bottle", [[1, 1300], [6, 1160]]),
-      offer("rose-syrup", 750, "750 ml bottle", [[1, 1600], [6, 1440]]),
-      offer("culinary-matcha", 1000, "1 kg bag", [[1, 9800]]),
-      offer("oat-milk", 5676, "case of 6 cartons", [[1, 2300], [4, 2150]]),
-      offer("cold-cups", 50, "sleeve of 50", [[1, 1150]]),
-      offer("lids", 100, "sleeve of 100", [[1, 1450]]),
-      offer("straws", 250, "box of 250", [[1, 1800]]),
+      offer("fig-syrup", "Monin", 750, "750 ml bottle", [[1, 1400], [6, 1250]]),
+      offer("strawberry-puree", "Monin", 1000, "1 L bottle", [[1, 1200], [6, 1080]]),
+      offer("mango-puree", "Monin", 1000, "1 L bottle", [[1, 1300], [6, 1170]]),
+      offer("banana-syrup", "Monin", 750, "750 ml bottle", [[1, 1300], [6, 1160]]),
+      offer("rose-syrup", "Monin", 750, "750 ml bottle", [[1, 1600], [6, 1440]]),
+      offer("culinary-matcha", "Jade Leaf", 1000, "1 kg bag", [[1, 9800]]),
+      offer("oat-milk", "Oatly Barista Edition", 5676, "case of 6 cartons", [[1, 2300], [4, 2150]]),
+      offer("cold-cups", "Choice", 50, "sleeve of 50", [[1, 1150]]),
+      offer("lids", "Choice", 100, "sleeve of 100", [[1, 1450]]),
+      offer("straws", "Aardvark", 250, "box of 250", [[1, 1800]]),
     ],
   },
   {
-    id: "paper-crane", name: "Paper Crane Packaging", approved: true, leadDays: 4, shippingCents: 2000, freeShippingAtCents: 12000, orderCycleDays: 10,
-    blurb: "Cups, lids, and straws in bulk.",
+    id: "imperial-dade", name: "Imperial Dade", approved: true, leadDays: 4, shippingCents: 2000, freeShippingAtCents: 12000, orderCycleDays: 10,
+    blurb: "Dart cups and lids and Aardvark straws in bulk.",
     offers: [
-      offer("cold-cups", 50, "sleeve of 50", [[1, 900], [10, 800], [20, 700]]),
-      offer("hot-cups", 50, "sleeve of 50", [[1, 1000], [10, 880]]),
-      offer("lids", 100, "sleeve of 100", [[1, 1200], [6, 1050]]),
-      offer("straws", 250, "box of 250", [[1, 1500], [4, 1300]]),
+      offer("cold-cups", "Dart Solo Ultra Clear", 50, "sleeve of 50", [[1, 900], [10, 800], [20, 700]]),
+      offer("hot-cups", "Dart Solo", 50, "sleeve of 50", [[1, 1000], [10, 880]]),
+      offer("lids", "Dart", 100, "sleeve of 100", [[1, 1200], [6, 1050]]),
+      offer("straws", "Aardvark", 250, "box of 250", [[1, 1500], [4, 1300]]),
     ],
   },
   {
-    id: "bargain-leaf", name: "Bargain Leaf Imports", approved: false, leadDays: 7, shippingCents: 3000, freeShippingAtCents: 50000, orderCycleDays: 10,
+    id: "amazon-seller", name: "Amazon Marketplace seller", approved: false, leadDays: 7, shippingCents: 3000, freeShippingAtCents: 50000, orderCycleDays: 10,
     blurb: "Very cheap matcha from an unvetted seller. Not on our approved list.",
     offers: [
-      offer("ceremonial-matcha", 500, "500 g bag", [[1, 10500]]),
+      offer("ceremonial-matcha", "Unbranded", 500, "500 g bag", [[1, 10500]]),
     ],
   },
 ];

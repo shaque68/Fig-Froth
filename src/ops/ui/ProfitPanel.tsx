@@ -8,7 +8,7 @@ const pct = (value: number) => `${Math.round(value * 100)}%`;
 const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 export function ProfitPanel({ world }: { world: World }) {
-  const [supplierId, setSupplierId] = useState("mossy-hill");
+  const [supplierId, setSupplierId] = useState("ippodo");
   const [percent, setPercent] = useState(0);
   const base = useMemo(() => drinkProfits(world), [world]);
   const after = useMemo(() => drinkProfits(world, percent > 0 ? { supplierId, percent } : null), [world, supplierId, percent]);
@@ -23,7 +23,7 @@ export function ProfitPanel({ world }: { world: World }) {
   return (
     <div className="profit">
       <p className="compare-takeaway">{takeaway}</p>
-      <p className="ops-muted compare-sub">Cost per 16 oz iced drink with whole milk, using the cheapest approved supplier for each ingredient, plus the cup, lid, and straw. Simulated prices.</p>
+      <p className="ops-muted compare-sub">Cost per 16 oz iced drink with whole milk, using the cheapest approved supplier for each ingredient, plus the cup, lid, and straw.</p>
       <div className="whatif">
         <label>What if <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
           {SUPPLIERS.filter((candidate) => candidate.approved).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}

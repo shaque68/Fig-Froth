@@ -72,6 +72,6 @@ test("Claude mode falls back when the API call fails", async () => {
   await withApp({ apiKey: "test-key", createClient: () => failing }, async (base) => {
     const response = await post(base, { kind: "supplier-message", snapshot: { order: { id: "PO-1" } } });
     assert.equal(response.status, 502);
-    assert.match((await response.json()).error, /demo template/);
+    assert.match((await response.json()).error, /standard version/);
   });
 });

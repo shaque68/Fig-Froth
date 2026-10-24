@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
-import { SHELVES } from "../engine/data";
+import { offerFor, SHELVES } from "../engine/data";
 import { formatQty } from "../engine/inventory";
 import { formatClock, formatDay } from "../engine/orders";
 import { explainReorderPoint, formatDaysLeft, shelfCapacity, statusLabel, type TinSummary } from "../engine/pantry";
@@ -74,6 +74,7 @@ export function TinDetail({ tin, world, onClose }: { tin: TinSummary; world: Wor
         </div>
         <p className="tin-detail-why">{explainReorderPoint(tin)}</p>
         <dl className="tin-detail-facts">
+          <div><dt>Product</dt><dd>{offerFor(tin.supplier, tin.ingredient.id)?.brand ?? "—"}</dd></div>
           <div><dt>Supplier</dt><dd>{tin.supplier.name}</dd></div>
           <div><dt>Delivery time</dt><dd>{tin.supplier.leadDays} {tin.supplier.leadDays === 1 ? "day" : "days"}</dd></div>
           <div><dt>Used per day</dt><dd>{formatQty(tin.ingredient.id, Math.round(tin.usagePerDay))}</dd></div>
@@ -88,14 +89,14 @@ export function TinDetail({ tin, world, onClose }: { tin: TinSummary; world: Wor
               {tin.batches.map((batch) => (
                 <tr key={batch.id}>
                   <td>{formatQty(tin.ingredient.id, batch.qty)}</td>
-                  <td>{batch.receivedDay < 0 ? `${-batch.receivedDay} days before the demo` : formatDay(batch.receivedDay)}</td>
+                  <td>{formatDay(batch.receivedDay)}</td>
                   <td>{batch.expiresDay === null ? "—" : batch.expiresDay < world.day + 3 ? <strong className="text-warn">{formatDay(batch.expiresDay)}</strong> : formatDay(batch.expiresDay)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        <p className="ops-fineprint">Simulated data · as of {formatDay(world.day)}, {formatClock(world.minute)}</p>
+        <p className="ops-fineprint">As of {formatDay(world.day)}, {formatClock(world.minute)}</p>
       </div>
     </div>
   );

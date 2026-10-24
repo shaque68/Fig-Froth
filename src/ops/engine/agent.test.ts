@@ -26,10 +26,10 @@ const linesFor = (pos: Array<{ supplierId: string; lines: Array<{ ingredientId: 
 
 test("rule 1: only items at or below their reorder point start an order", () => {
   const world = calmWorld();
-  setDays(world, "hot-cups", 3); // Paper Crane: 4-day lead + 2 safety days = reorder at 6 days
+  setDays(world, "hot-cups", 3); // Imperial Dade: 4-day lead + 2 safety days = reorder at 6 days
   const plan = planSmart(world);
   assert.deepEqual(plan.atReorderPoint, ["hot-cups"]);
-  assert.deepEqual(plan.pos.map((po) => po.supplierId), ["paper-crane"]);
+  assert.deepEqual(plan.pos.map((po) => po.supplierId), ["imperial-dade"]);
   assert.match(plan.pos[0].reasons[0].text, /reorder point/);
 });
 
@@ -42,15 +42,15 @@ test("rule 2: items from the same supplier that will need ordering soon ship tog
   const lines = plan.pos[0].lines;
   assert.equal(lines.find((line) => line.ingredientId === "lids")?.role, "pulled-forward");
   assert.ok(!lines.some((line) => line.ingredientId === "straws"));
-  assert.ok(plan.pos[0].reasons.some((reason) => /early/.test(reason.text) && reason.savingsCents === getSupplier("paper-crane").shippingCents));
+  assert.ok(plan.pos[0].reasons.some((reason) => /early/.test(reason.text) && reason.savingsCents === getSupplier("imperial-dade").shippingCents));
 });
 
 test("rule 3: an order just under free shipping is topped up with items we'll use soon", () => {
   const world = calmWorld();
-  setDays(world, "whole-milk", 2); // a milk order that lands just under Little Meadow's free-shipping line
+  setDays(world, "whole-milk", 2); // a milk order that lands just under Restaurant Depot's free-shipping line
   const plan = planSmart(world);
-  const po = plan.pos.find((candidate) => candidate.supplierId === "little-meadow")!;
-  assert.ok(po.subtotalCents >= getSupplier("little-meadow").freeShippingAtCents, `subtotal ${po.subtotalCents}`);
+  const po = plan.pos.find((candidate) => candidate.supplierId === "restaurant-depot")!;
+  assert.ok(po.subtotalCents >= getSupplier("restaurant-depot").freeShippingAtCents, `subtotal ${po.subtotalCents}`);
   assert.equal(po.shippingCents, 0);
   const reason = po.reasons.find((candidate) => candidate.rule === "Free shipping");
   assert.ok(reason, "explains the top-up");
@@ -65,7 +65,7 @@ test("rule 3: no top-up when the gap is too big to be worth it", () => {
   setDays(world, "hot-cups", 3);
   const po = planSmart(world).pos[0];
   assert.ok(!po.reasons.some((reason) => reason.rule === "Free shipping"));
-  assert.equal(po.shippingCents, getSupplier("paper-crane").shippingCents);
+  assert.equal(po.shippingCents, getSupplier("imperial-dade").shippingCents);
 });
 
 test("rule 4: bulk tiers are only taken when perishables will be used before they expire", () => {
@@ -91,7 +91,7 @@ test("rule 5: the weekly cash cap is respected and the least urgent items are de
   setDays(world, "hot-cups", 5.8);
   setDays(world, "strawberry-puree", 1);
   const spent: PurchaseOrder = {
-    id: "PO-TEST", supplierId: "mossy-hill", status: "received", lines: [], subtotalCents: 0, shippingCents: 0,
+    id: "PO-TEST", supplierId: "ippodo", status: "received", lines: [], subtotalCents: 0, shippingCents: 0,
     totalCents: SETTINGS.weeklyCashCapCents - 25000, reasons: [], createdDay: world.day, promisedDay: 0, arrivalDay: 0,
     needsApproval: false, savings: { bulkCents: 0, shippingAvoidedCents: 0 },
   };
@@ -113,9 +113,9 @@ test("rule 6: picks the lowest landed cost among approved suppliers that deliver
   setDays(world, "fig-syrup", 2);
   setDays(world, "banana-syrup", 2);
   const plan = planSmart(world);
-  // Orchard Lane is already shipping (free), so its oat milk lands cheaper than a separate dairy delivery.
-  assert.ok(linesFor(plan.pos, "orchard-lane").includes("oat-milk"));
-  const reason = plan.pos.flatMap((po) => po.reasons).find((candidate) => candidate.rule === "Best supplier" && /Orchard Lane/.test(candidate.text));
+  // WebstaurantStore is already shipping (free), so its oat milk lands cheaper than a separate dairy delivery.
+  assert.ok(linesFor(plan.pos, "webstaurant").includes("oat-milk"));
+  const reason = plan.pos.flatMap((po) => po.reasons).find((candidate) => candidate.rule === "Best supplier" && /WebstaurantStore/.test(candidate.text));
   assert.ok(reason, "explains the switch");
 });
 
@@ -123,16 +123,16 @@ test("rule 6: never uses an unapproved supplier, even when it's cheaper", () => 
   const world = calmWorld();
   setDays(world, "ceremonial-matcha", 6);
   const plan = planSmart(world);
-  assert.deepEqual(plan.pos.map((po) => po.supplierId), ["mossy-hill"]);
-  assert.ok(plan.pos[0].reasons.some((reason) => /Bargain Leaf Imports is cheaper but isn't an approved supplier/.test(reason.text)));
+  assert.deepEqual(plan.pos.map((po) => po.supplierId), ["ippodo"]);
+  assert.ok(plan.pos[0].reasons.some((reason) => /Amazon Marketplace seller is cheaper but isn't an approved supplier/.test(reason.text)));
 });
 
 test("rule 6: skips a supplier that can't deliver before we run out", () => {
   const world = calmWorld();
-  setDays(world, "culinary-matcha", 2); // Mossy Hill takes 5 days; Orchard Lane takes 2
+  setDays(world, "culinary-matcha", 2); // Ippodo Tea takes 5 days; WebstaurantStore takes 2
   const plan = planSmart(world);
-  assert.ok(linesFor(plan.pos, "orchard-lane").includes("culinary-matcha"));
-  assert.ok(!linesFor(plan.pos, "mossy-hill").includes("culinary-matcha"));
+  assert.ok(linesFor(plan.pos, "webstaurant").includes("culinary-matcha"));
+  assert.ok(!linesFor(plan.pos, "ippodo").includes("culinary-matcha"));
 });
 
 test("simple ordering: one item per order, base price, full shipping", () => {
@@ -153,8 +153,8 @@ test("guardrail: orders over the approval limit wait for a person; smaller ones 
   setDays(world, "ceremonial-matcha", 3);
   setDays(world, "whole-milk", 2);
   const run = runAgent(world);
-  const matcha = world.purchaseOrders.find((po) => po.supplierId === "mossy-hill")!;
-  const milk = world.purchaseOrders.find((po) => po.supplierId === "little-meadow")!;
+  const matcha = world.purchaseOrders.find((po) => po.supplierId === "ippodo")!;
+  const milk = world.purchaseOrders.find((po) => po.supplierId === "restaurant-depot")!;
   assert.ok(matcha.totalCents > SETTINGS.approvalThresholdCents);
   assert.equal(matcha.status, "awaiting");
   assert.ok(milk.totalCents <= SETTINGS.approvalThresholdCents);
@@ -182,7 +182,7 @@ test("approving sends the order; it arrives after the lead time and refills the 
   assert.equal(approvePo(world, po.id), true);
   assert.equal(po.status, "sent");
   assert.equal(po.approvedBy, "you");
-  assert.equal(po.arrivalDay, world.day + getSupplier("mossy-hill").leadDays);
+  assert.equal(po.arrivalDay, world.day + getSupplier("ippodo").leadDays);
   const before = onHand(world.stock["ceremonial-matcha"]);
   world.day = po.arrivalDay;
   receiveDeliveries(world);
@@ -206,13 +206,13 @@ test("rejecting frees the item so the agent can plan it again", () => {
 });
 
 test("a late delivery gets a backup order that only a person can send", () => {
-  const effects = { ...emptyEffects(), delays: [{ supplierId: "paper-crane", extraDays: 5, fromDay: 0, toDay: 10 }] };
+  const effects = { ...emptyEffects(), delays: [{ supplierId: "imperial-dade", extraDays: 5, fromDay: 0, toDay: 10 }] };
   const world = createWorld(2026, "late-delivery", { effects });
   runToDay(world, 12, (current) => current.purchaseOrders.some((po) => po.isBackup));
   const backup = world.purchaseOrders.find((po) => po.isBackup);
   assert.ok(backup, "a backup was drafted");
   assert.equal(backup!.status, "awaiting");
-  assert.notEqual(backup!.supplierId, "paper-crane");
+  assert.notEqual(backup!.supplierId, "imperial-dade");
   assert.ok(world.log.some((entry) => / is late$/.test(entry.title)));
   assert.deepEqual(checkGuardrails(world), []);
 });
@@ -244,6 +244,6 @@ test("the comparison runs both policies on the same customers and explains the r
   assert.equal(result.simple.goodsCents + result.simple.shippingCents, result.simple.spendCents);
   assert.ok(result.smart.shippingCents < result.simple.shippingCents);
   assert.ok(result.smart.spendCents < result.simple.spendCents);
-  assert.match(result.takeaway, /^Over 30 simulated days, smarter ordering spent \$[\d,]+ less/);
+  assert.match(result.takeaway, /^Over 30 days, smarter ordering spends \$[\d,]+ less/);
   assert.deepEqual(runComparison(2026), result, "repeatable");
 });

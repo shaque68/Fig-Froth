@@ -43,7 +43,7 @@ export function FreshnessPanel({ world, onStart }: { world: World; onStart: () =
   return (
     <div className="freshness">
       <p className="compare-takeaway">{takeaway}</p>
-      <p className="ops-muted compare-sub">Perishable batches expiring in the next {HORIZON} days, soonest first. Simulated, at today’s pace of use (oldest batch used first).</p>
+      <p className="ops-muted compare-sub">Perishable batches expiring in the next {HORIZON} days, soonest first, at today’s pace of use (oldest batch used first).</p>
       <SpecialCard suggestion={world.specialSuggestion} world={world} onStart={onStart} />
       {outlook.length === 0 ? <p className="ops-muted">Nothing expires in the next {HORIZON} days.</p> : (
         <figure className="fresh-chart">

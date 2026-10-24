@@ -7,7 +7,9 @@ import { addLog, createWorld, emptyEffects, type ScenarioEffects, type World, ty
 export type Scenario = {
   id: string;
   name: string;
-  /** One sentence for the banner. */
+  /** Who the notice comes from, e.g. "Weather alert" or "Delivery delay · Imperial Dade". */
+  source: string;
+  /** One sentence for the notice. */
   banner: string;
   effects?: () => Partial<ScenarioEffects>;
   extraStock?: WorldOptions["extraStock"];
@@ -30,40 +32,46 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "normal",
     name: "Normal week",
+    source: "",
     banner: "A typical June week: busier weekends, a few warm afternoons, nothing unusual.",
   },
   {
     id: "heat-wave",
     name: "Heat wave",
-    banner: "A heat wave hits this week (93–99°F), so far more drinks are ordered iced. Watch the cups, straws, and purées.",
+    source: "Weather alert",
+    banner: "Heat advisory for Paterson this week, with highs of 93–99°F. Expect far more iced drinks.",
     effects: () => ({ tempByDay: { 0: 93, 1: 96, 2: 98, 3: 99, 4: 97, 5: 95, 6: 93 } }),
     response: /iced cups|straws/i,
   },
   {
     id: "price-increase",
     name: "Supplier price increase",
-    banner: "Mossy Hill Tea Co. raises its matcha prices 25% starting today. Watch where the agent buys matcha instead.",
-    effects: () => ({ priceFactor: { "mossy-hill": 1.25 } }),
-    response: /Mossy Hill|cheaper|culinary matcha/i,
+    source: "Price change · Ippodo Tea",
+    banner: "Matcha prices are going up 25%, effective today.",
+    effects: () => ({ priceFactor: { "ippodo": 1.25 } }),
+    response: /Ippodo Tea|cheaper|culinary matcha/i,
   },
   {
     id: "late-delivery",
     name: "Late delivery",
-    banner: "Paper Crane Packaging is running 5 days behind on deliveries. Watch the iced cups.",
-    effects: () => ({ delays: [{ supplierId: "paper-crane", extraDays: 5, fromDay: 0, toDay: 9 }] }),
+    source: "Delivery delay · Imperial Dade",
+    banner: "Shipments are running about 5 days behind schedule.",
+    effects: () => ({ delays: [{ supplierId: "imperial-dade", extraDays: 5, fromDay: 0, toDay: 9 }] }),
     response: /late|backup/i,
   },
   {
     id: "near-expiry",
     name: "Matcha near expiry",
-    banner: "A big bag of ceremonial matcha expires on Saturday. Can we use it up before it goes to waste?",
+    source: "Use-by alert",
+    banner: "A 2 kg bag of ceremonial matcha must be used by Saturday.",
     extraStock: { "ceremonial-matcha": [{ qty: 2000, ageDays: 40 }] },
     response: /use it up|special|ceremonial matcha/i,
   },
   {
     id: "catering",
     name: "Large catering order",
-    banner: "A local office booked 60 iced drinks for Wednesday at 10 am, and the agent knows about it in advance.",
+    source: "New catering booking",
+    banner: "60 iced drinks for a local office, Wednesday at 10 am.",
     effects: () => ({ bookings: [CATERING] }),
     response: /booked order|catering/i,
   },
@@ -79,7 +87,7 @@ export function createScenarioWorld(seed: number, scenarioId = "normal", options
   const world = createWorld(seed, scenario.id, { effects, extraStock: scenario.extraStock, ...options });
   if (scenario.id !== "normal") {
     world.minute = SETTINGS.openMinute;
-    addLog(world, "system", `Scenario: ${scenario.name}`, scenario.banner);
+    addLog(world, "system", scenario.source, scenario.banner);
   }
   return world;
 }

@@ -43,13 +43,13 @@ export const TOUR: Step[] = [
   },
   {
     title: "Smarter ordering",
-    say: "Open “Why this order?” on any order, then compare: same month, same customers, two ways to order.",
+    say: "Open “Why this order?” on any order, then Savings: same month, same customers, two ways to order.",
     tab: "compare",
     focus: "compare-title",
   },
   {
     title: "A curveball",
-    say: "Pick a scenario, run a day, and read how the agent adapts in the banner.",
+    say: "Pick a scenario, run a day, and read what the agent did in the notice.",
     tab: "today",
     focus: "ops-controls",
     actions: ({ loadScenario, runDay }) => [
@@ -60,7 +60,7 @@ export const TOUR: Step[] = [
   },
   {
     title: "Controls",
-    say: "Every decision is in the audit log, and bigger orders wait for a person. It saves time and money, and a human stays in charge.",
+    say: "Every decision is in the activity log, and bigger orders wait for a person. It saves time and money, and a human stays in charge.",
     tab: "log",
     focus: "log-title",
   },

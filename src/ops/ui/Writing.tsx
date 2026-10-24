@@ -17,15 +17,15 @@ export async function writeText(kind: WritingKind, world: World, claudeMode: boo
       body: JSON.stringify({ kind, snapshot: buildSnapshot(world, poId) }),
     });
     const result = await response.json() as { text?: string; error?: string };
-    if (!response.ok || !result.text) return { text: template, source: "demo", notice: result.error ?? "Claude mode isn’t available. Showing the demo template." };
+    if (!response.ok || !result.text) return { text: template, source: "demo", notice: result.error ?? "Claude mode isn’t available. Showing the standard version." };
     return { text: result.text, source: "claude" };
   } catch {
-    return { text: template, source: "demo", notice: "Couldn’t reach the local server. Showing the demo template." };
+    return { text: template, source: "demo", notice: "Couldn’t reach the local server. Showing the standard version." };
   }
 }
 
 export function SourceTag({ written }: { written: Written }) {
-  return <span className={`source-tag source-${written.source}`}>{written.source === "claude" ? <><Sparkles size={13} aria-hidden="true" /> Written by Claude</> : "Demo template"}</span>;
+  return <span className={`source-tag source-${written.source}`}>{written.source === "claude" ? <><Sparkles size={13} aria-hidden="true" /> Written by Claude</> : "Standard"}</span>;
 }
 
 export function MorningBrief({ world, claudeMode }: { world: World; claudeMode: boolean }) {
@@ -70,7 +70,7 @@ export function WritingDialog({ title, written, busy, kind, onClose }: { title: 
           <SourceTag written={written} />
           <p className="writing-text">{written.text}</p>
           {written.notice && <p className="writer-notice" role="status">{written.notice}</p>}
-          {kind === "supplier-message" && <p className="ops-fineprint">Draft only. Nothing is sent: this demo has no real supplier contacts.</p>}
+          {kind === "supplier-message" && <p className="ops-fineprint">Draft only. Copy it into your email to send.</p>}
         </>}
       </div>
     </div>
