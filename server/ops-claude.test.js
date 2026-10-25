@@ -68,6 +68,19 @@ test("Claude mode can draft an invoice dispute from the order's mismatches", asy
   assert.match(prompt, /corrected invoice or a credit/);
 });
 
+test("Claude mode writes promotion marketing for customers without mentioning expiry", async () => {
+  let prompt = "";
+  const fakeClient = { beta: { messages: { create: async (params) => { prompt = params.messages[0].content; return { model: OPS_CLAUDE_MODEL, stop_reason: "end_turn", content: [{ type: "text", text: "Social post:\nLast call on the Classic Matcha: 20% off, now $6.40.\n\nText message:\nFig & Froth: Classic Matcha $6.40 while it lasts." }] }; } } } };
+  await withApp({ apiKey: "test-key", createClient: () => fakeClient }, async (base) => {
+    const response = await post(base, { kind: "promo", snapshot: { promotion: { type: "Sale", drinks: ["Classic Matcha"], percentOff: 20, regularPrice: "$8.00", promoPrice: "$6.40" } } });
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).text, /^Social post:/);
+  });
+  assert.match(prompt, /customers rather than the owner/);
+  assert.match(prompt, /Never say or hint that an ingredient is expiring/);
+  assert.match(prompt, /"promoPrice":"\$6.40"/);
+});
+
 test("Claude mode rejects malformed requests and falls back on a refusal", async () => {
   const refusing = { beta: { messages: { create: async () => ({ model: OPS_CLAUDE_MODEL, stop_reason: "refusal", content: [] }) } } };
   await withApp({ apiKey: "test-key", createClient: () => refusing }, async (base) => {

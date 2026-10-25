@@ -4,6 +4,7 @@ import { INGREDIENTS, SETTINGS, SUPPLIERS, getIngredient, getSupplier, offerFor 
 import { formatCents, formatDollars } from "./money.ts";
 import { endFinishedSpecials, suggestSpecial } from "./freshness.ts";
 import { formatDay } from "./orders.ts";
+import { endFinishedPromotions } from "./promotions.ts";
 import { planSimple, planSmart, itemState, type PlannedPo } from "./planner.ts";
 import { describeLine, isApprovedSupplier, makeLine, needsApproval, sendPo, shippingFor } from "./purchasing.ts";
 import { addLog, type AgentRun, type PurchaseOrder, type World } from "./sim.ts";
@@ -123,6 +124,7 @@ export function checkLateDeliveries(world: World): PurchaseOrder[] {
 export function runAgent(world: World): AgentRun {
   const logStart = world.log.length;
   endFinishedSpecials(world);
+  endFinishedPromotions(world);
   const backups = checkLateDeliveries(world);
   const plan = world.policy === "smart" ? planSmart(world) : planSimple(world);
   const lowNames = plan.atReorderPoint.map((id) => getIngredient(id).name.toLowerCase());

@@ -3,7 +3,8 @@
 import { DRINKS, INGREDIENTS, SETTINGS, STARTING_STOCK, getIngredient, getSupplier, offerFor } from "./data.ts";
 import { lineUsage } from "./forecast.ts";
 import { deductOldestFirst, expiryFor, onHand, removeExpired, stockValueCents, type Batch } from "./inventory.ts";
-import { dayConditions, generateDayOrders, type DayConditions, type Order } from "./orders.ts";
+import { dayConditions, generateDayOrders, type DayConditions, type Order, type OrderLine } from "./orders.ts";
+import { priceCart, type PromotionKind } from "../../pricing.ts";
 
 export type Policy = "smart" | "simple";
 
@@ -104,6 +105,28 @@ export type PurchaseOrder = {
   lateNoticeDay?: number;
 };
 
+/** A discount or bundle the owner published to the storefront. */
+export type Promotion = {
+  id: string;
+  kind: PromotionKind;
+  productIds: string[];
+  percentOff: number;
+  headline: string;
+  detail: string;
+  status: "live" | "ended";
+  startDay: number;
+  /** Runs through this day (the batch's use-by day). Bundles from the builder run until ended. */
+  endDay?: number;
+  /** The perishable batch it's meant to use up. */
+  ingredientId?: string;
+  batchId?: string;
+  endedDay?: number;
+  endedReason?: string;
+  /** What the forecast expected when it was published. */
+  forecast: { extraPerDay: number; usePerDay: number; savedQty: number; savedCents: number; netCents: number };
+  results: { drinks: number; bundles: number; discountCents: number };
+};
+
 /** One pass of the restock agent's loop, summarized for the step trace. */
 export type AgentRun = {
   day: number;
@@ -143,7 +166,8 @@ export type World = {
   /** The agent's latest "use it up" suggestion, if any. */
   specialSuggestion?: { drinkId: string; ingredientId: string; batchId: string; expiresDay: number; leftover: number; savedQty: number; savedCents: number; text: string } | null;
   agentRuns: AgentRun[];
-  counters: { po: number; batch: number; log: number };
+  promotions: Promotion[];
+  counters: { po: number; batch: number; log: number; promo: number };
 };
 
 const RECENT_LIMIT = 40;
@@ -216,7 +240,8 @@ export function createWorld(seed: number, scenarioId = "normal", options: WorldO
     effects,
     specials: {},
     agentRuns: [],
-    counters: { po: 1000, batch: 0, log: 0 },
+    promotions: [],
+    counters: { po: 1000, batch: 0, log: 0, promo: 0 },
   };
 
   for (const ingredient of INGREDIENTS) {
@@ -243,14 +268,19 @@ export function openDay(world: World, hooks: DayHooks = {}): void {
   world.minute = SETTINGS.openMinute;
   world.today = blankDay(world.day, world.conditions.tempF);
   world.todayDemand = {};
-  const generated = generateDayOrders(world.seed, world.conditions, { drinkBoosts: world.specials });
+  const generated = generateDayOrders(world.seed, world.conditions, { drinkBoosts: world.specials, promotions: livePromotions(world) });
   const booked = world.effects.bookings.filter((order) => order.day === world.day);
   world.queue = [...generated, ...booked].sort((a, b) => a.minute - b.minute || a.id.localeCompare(b.id));
   hooks.onOpen?.(world);
 }
 
+export function livePromotions(world: World): Promotion[] {
+  return world.promotions.filter((promo) => promo.status === "live");
+}
+
 export function serveOrder(world: World, order: Order): ServedOrder {
   const served: ServedOrder = { order, made: 0, missed: 0, missing: [], usage: {}, revenueCents: 0 };
+  const made: OrderLine[] = [];
   for (const line of order.lines) {
     const needs = lineUsage(line);
     for (const use of needs) world.todayDemand[use.ingredientId] = (world.todayDemand[use.ingredientId] ?? 0) + use.amount;
@@ -264,10 +294,10 @@ export function serveOrder(world: World, order: Order): ServedOrder {
       deductOldestFirst(world.stock[use.ingredientId], use.amount);
       served.usage[use.ingredientId] = (served.usage[use.ingredientId] ?? 0) + use.amount;
     }
-    const drink = DRINKS.find((candidate) => candidate.id === line.drinkId);
     served.made += 1;
-    served.revenueCents += (drink?.priceCents ?? 0) + (line.milk === "oat" ? OAT_UPCHARGE_CENTS : 0);
+    made.push(line);
   }
+  served.revenueCents = chargeFor(world, made);
   world.minute = Math.max(world.minute, order.minute);
   world.today.orders += 1;
   world.today.drinksMade += served.made;
@@ -276,6 +306,31 @@ export function serveOrder(world: World, order: Order): ServedOrder {
   world.recent.unshift(served);
   if (world.recent.length > RECENT_LIMIT) world.recent.length = RECENT_LIMIT;
   return served;
+}
+
+/** What the drinks that were made cost the customer, with any live promotions applied. */
+function chargeFor(world: World, lines: OrderLine[]): number {
+  const promotions = livePromotions(world);
+  const cartLines = lines.map((line) => ({
+    productId: line.drinkId,
+    quantity: 1,
+    unitCents: DRINKS.find((candidate) => candidate.id === line.drinkId)?.priceCents ?? 0,
+    extrasCents: line.milk === "oat" ? OAT_UPCHARGE_CENTS : 0,
+  }));
+  if (promotions.length === 0) return cartLines.reduce((sum, line) => sum + line.unitCents + line.extrasCents, 0);
+  const priced = priceCart(cartLines, promotions);
+  for (const line of priced.lines) {
+    const promo = line.promotionId ? promotions.find((candidate) => candidate.id === line.promotionId) : undefined;
+    if (!promo) continue;
+    promo.results.drinks += 1;
+    promo.results.discountCents += line.unitCents - line.saleUnitCents;
+  }
+  for (const bundle of priced.bundles) {
+    const promo = promotions.find((candidate) => candidate.id === bundle.promotionId)!;
+    promo.results.bundles += bundle.count;
+    promo.results.discountCents += bundle.discountCents;
+  }
+  return priced.subtotalCents;
 }
 
 /** Serves every remaining order before `minute`. Returns what was served. */

@@ -4,6 +4,8 @@ import { formatCents, formatDollars } from "../engine/money";
 import { formatClock, formatDay } from "../engine/orders";
 import { formatStockDays, needsAttention, statusLabel, statusTone, summarizePantry } from "../engine/pantry";
 import { startSpecial } from "../engine/freshness";
+import type { PromoPost, WritingKind } from "../engine/brief";
+import { endPromotion, promotionTitle, publishPromotion, storePromotions, suggestPromotions, type PublishInput } from "../engine/promotions";
 import { resolveInvoice } from "../engine/match";
 import { approvePo, rejectPo } from "../engine/purchasing";
 import { SETTINGS } from "../engine/data";
@@ -16,6 +18,7 @@ import { ComparePanel } from "./ComparePanel";
 import { FreshnessPanel, SpecialCard } from "./FreshnessPanel";
 import { InvoicePanel } from "./InvoicePanel";
 import { ProfitPanel } from "./ProfitPanel";
+import { PromoSideCard, PromotionsPanel } from "./PromotionsPanel";
 import { OrdersFeed } from "./OrdersFeed";
 import { Pantry, TinDetail, type Drain } from "./Pantry";
 import { PoCard, type WriteRequest } from "./PoCard";
@@ -25,7 +28,7 @@ import "../ops.css";
 
 const DEFAULT_SEED = 2026;
 type Speed = "slow" | "fast" | "instant";
-type Tab = "today" | "orders" | "log" | "compare" | "freshness" | "profit" | "invoices";
+type Tab = "today" | "orders" | "log" | "compare" | "freshness" | "promotions" | "profit" | "invoices";
 const SPEED_MS: Record<Exclude<Speed, "instant">, number> = { slow: 650, fast: 140 };
 const SPEED_LABEL: Record<Speed, string> = { slow: "Slow", fast: "Fast", instant: "Instant" };
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -34,6 +37,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "log", label: "Activity log" },
   { id: "compare", label: "Savings" },
   { id: "freshness", label: "Freshness" },
+  { id: "promotions", label: "Promotions" },
   { id: "profit", label: "Drink margins" },
   { id: "invoices", label: "Invoices" },
 ];
@@ -100,7 +104,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
   const [tab, setTab] = useState<Tab>("today");
   const [notice, setNotice] = useState<string | null>(null);
   const [claudeMode, setClaudeMode] = useState(false);
-  const [writing, setWriting] = useState<{ kind: "explain" | "supplier-message" | "dispute"; poId: string; written: Written | null } | null>(null);
+  const [writing, setWriting] = useState<{ kind: Exclude<WritingKind, "brief">; title: string; token: number; written: Written | null } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [tourStep, setTourStep] = useState(0);
   const [largeText, setLargeTextState] = useState(() => readFlag(LARGE_TEXT_KEY, false));
@@ -109,6 +113,9 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
 
   const tins = useMemo(() => summarizePantry(world), [world]);
   const attention = useMemo(() => needsAttention(tins), [tins]);
+  const promoIdeas = useMemo(() => suggestPromotions(world), [world]);
+  const storeList = useMemo(() => storePromotions(world), [world]);
+  const storeKey = JSON.stringify(storeList);
   const awaiting = world.purchaseOrders.filter((po) => po.status === "awaiting");
   const lastRun = world.agentRuns.at(-1);
   const running = run !== null;
@@ -145,6 +152,15 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
     const timer = window.setInterval(() => { void poll(); }, 3000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
+
+  // Promotions are published from here: keep the storefront's list in step with what's live.
+  useEffect(() => {
+    let active = true;
+    fetch("/api/admin/promotions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: `{"promotions":${storeKey}}` })
+      .then((response) => { if (active && !response.ok) setNotice("Couldn’t update the storefront’s promotions. They’ll be sent again with the next change."); })
+      .catch(() => { if (active && storeKey !== "[]") setNotice("Couldn’t reach the server, so the storefront doesn’t show this promotion yet."); });
+    return () => { active = false; };
+  }, [storeKey]);
 
   const update = useCallback((step: (next: World) => void) => {
     setWorld((current) => {
@@ -224,6 +240,11 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
   const reject = (id: string) => { update((next) => { rejectPo(next, id); }); setNotice(null); };
   const runSpecial = () => update((next) => { if (next.specialSuggestion) { startSpecial(next, next.specialSuggestion); next.specialSuggestion = null; } });
   const resolve = (id: string, decision: "accept" | "dispute") => update((next) => { resolveInvoice(next, id, decision); });
+  const publish = (input: PublishInput) => {
+    update((next) => { publishPromotion(next, input); });
+    setNotice(`Published: ${promotionTitle(input)}. It’s live on the storefront now.`);
+  };
+  const endPromo = (id: string) => update((next) => { endPromotion(next, id, "you", "You ended it from the Promotions tab."); });
 
   function setLargeText(value: boolean) {
     setLargeTextState(value);
@@ -275,7 +296,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
       const status = await (await fetch("/api/ops/claude/status")).json() as { available: boolean };
       if (status.available) {
         setClaudeMode(true);
-        setNotice("Claude mode is on: Claude writes the brief, explanations, and supplier drafts. Every number still comes from the ordering rules.");
+        setNotice("Claude mode is on: Claude writes the brief, explanations, supplier drafts, and marketing posts. Every number still comes from the shop’s rules.");
       } else {
         setNotice("Claude mode needs ANTHROPIC_API_KEY in the local server’s .env. Using the standard text for now.");
       }
@@ -284,11 +305,13 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
     }
   }
 
-  const write: WriteRequest = (kind, poId) => {
-    setWriting({ kind, poId, written: null });
-    const snapshotWorld = world;
-    void writeText(kind, snapshotWorld, claudeMode, poId).then((written) => setWriting((current) => (current && current.poId === poId && current.kind === kind ? { ...current, written } : current)));
-  };
+  function startWriting(kind: Exclude<WritingKind, "brief">, title: string, poId?: string, promo?: PromoPost) {
+    const token = Date.now();
+    setWriting({ kind, title, token, written: null });
+    void writeText(kind, world, claudeMode, poId, promo).then((written) => setWriting((current) => (current && current.token === token ? { ...current, written } : current)));
+  }
+  const write: WriteRequest = (kind, poId) => startWriting(kind, kind === "explain" ? `Why ${poId}?` : kind === "dispute" ? `Invoice dispute for ${poId}` : `Message to the supplier for ${poId}`, poId);
+  const writePromo = (promo: PromoPost) => startWriting("promo", `Marketing for ${promotionTitle(promo)}`, undefined, promo);
 
   // Clear the drain highlight once the signature animation has played.
   useEffect(() => {
@@ -303,7 +326,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
   const byNewest = [...world.purchaseOrders].reverse();
   const recentPos = byNewest.filter((po) => po.status !== "awaiting").slice(0, 3);
   const flaggedCount = world.purchaseOrders.filter((po) => po.status === "flagged").length;
-  const responses = scenario.response ? world.log.filter((entry) => entry.actor !== "system" && scenario.response!.test(`${entry.title} ${entry.detail ?? ""}`)).slice(-3).reverse() : [];
+  const responses = scenario.response ? world.log.filter((entry) => entry.actor === "agent" && scenario.response!.test(`${entry.title} ${entry.detail ?? ""}`)).slice(-3).reverse() : [];
 
   return (
     <div className={`ops-page ${reducedMotion ? "reduce-motion" : ""} ${largeText ? "ops-large" : ""} ${presenting ? "is-presenting" : ""}`}>
@@ -382,6 +405,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
             {option.id === "orders" && awaiting.length > 0 && <span className="tab-badge">{awaiting.length}</span>}
             {option.id === "invoices" && flaggedCount > 0 && <span className="tab-badge">{flaggedCount}</span>}
             {option.id === "freshness" && world.specialSuggestion && <span className="tab-badge">1</span>}
+            {option.id === "promotions" && promoIdeas.length > 0 && <span className="tab-badge">{promoIdeas.length}</span>}
           </button>
         ))}
       </nav>
@@ -421,6 +445,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
           <aside className="ops-side">
             <MorningBrief world={world} claudeMode={claudeMode} />
             {(world.specialSuggestion || world.specialFor) && <SpecialCard suggestion={world.specialSuggestion} world={world} onStart={runSpecial} />}
+            <PromoSideCard world={world} suggestions={promoIdeas} onOpen={() => setTab("promotions")} />
             <section className="ops-panel" aria-labelledby="attention-title">
               <h2 id="attention-title" className="ops-side-title">Needs attention</h2>
               {attention.length === 0 ? <p className="ops-muted">Everything is comfortably stocked.</p> : (
@@ -485,7 +510,14 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
       {tab === "freshness" && (
         <section className="ops-panel" aria-labelledby="fresh-title">
           <div className="ops-panel-head"><div><p className="ops-eyebrow">Use it before it goes to waste</p><h2 id="fresh-title">Freshness <em>timeline.</em></h2></div></div>
-          <FreshnessPanel world={world} onStart={runSpecial} />
+          <FreshnessPanel world={world} onStart={runSpecial} promoIdeas={promoIdeas.length} onPromotions={() => setTab("promotions")} />
+        </section>
+      )}
+
+      {tab === "promotions" && (
+        <section className="ops-panel" aria-labelledby="promo-title">
+          <div className="ops-panel-head"><div><p className="ops-eyebrow">Sales and bundles, published to the storefront</p><h2 id="promo-title">Store <em>promotions.</em></h2></div></div>
+          <PromotionsPanel world={world} suggestions={promoIdeas} onPublish={publish} onEnd={endPromo} onWrite={writePromo} />
         </section>
       )}
 
@@ -514,7 +546,7 @@ export default function OpsPage({ onExit, onEditMenu, onSignOut }: { onExit?: ()
         />
       )}
 
-      {writing && <WritingDialog title={writing.kind === "explain" ? `Why ${writing.poId}?` : writing.kind === "dispute" ? `Invoice dispute for ${writing.poId}` : `Message to the supplier for ${writing.poId}`} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}
+      {writing && <WritingDialog title={writing.title} written={writing.written} busy={!writing.written} kind={writing.kind} onClose={() => setWriting(null)} />}
 
       {selectedTin && <TinDetail tin={selectedTin} world={world} onClose={() => setOpenTin(null)} />}
     </div>

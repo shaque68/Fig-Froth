@@ -33,7 +33,7 @@
 .admin-brand-name i { color: #b88372; font-weight: 500; }
 .admin-brand-name small { margin-top: 4px; color: var(--ops-muted); font-family: "DM Sans", sans-serif; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
 .ops-controls-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
-.ops-controls-bar-actions { display: flex; align-items: center; gap: 8px; }
+.ops-controls-bar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ops-controls-toggle[aria-expanded="true"] { background: #eef0e8; }
 .ops-controls-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .ops-clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-size: 16px; }
@@ -417,3 +417,39 @@
   .presenter-nav { padding-top: 0; }
   .ops-page.is-presenting { padding-bottom: 360px; }
 }
+
+/* Promotions */
+.promo-card .ops-eyebrow { gap: 6px; margin-bottom: 4px; color: #8a6420; }
+.promo-card h3 { margin: 0 0 6px; font-size: 21px; }
+.promo-card.is-live { border-color: #b9c9ad; box-shadow: inset 4px 0 0 var(--ops-ok); }
+.po-status-live { color: #fff; background: var(--ops-ok); }
+.promo-why { margin: 0 0 12px; color: var(--ops-muted); font-size: 15px; }
+.promo-chips { margin-bottom: 10px; }
+.promo-chips button.is-blocked { border-style: dashed; color: #9a9b90; text-decoration: line-through; }
+.promo-chips button.is-blocked.is-selected { border-color: var(--ops-now); color: #fff; background: var(--ops-now); text-decoration: none; }
+.promo-price { margin: 0 0 10px; font-size: 18px; }
+.promo-price del { color: var(--ops-muted); font-size: 15px; }
+.promo-price strong { color: var(--green); font-size: 22px; }
+.promo-price span { color: var(--ops-muted); font-size: 15px; }
+.promo-forecast { display: grid; gap: 0; margin: 0 0 12px; font-size: 15px; }
+.promo-forecast div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.promo-forecast dt { color: var(--ops-muted); }
+.promo-forecast dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.promo-forecast .promo-net { border-bottom: 0; font-weight: 700; }
+.promo-forecast .promo-net dt { color: var(--ops-text); }
+.promo-banner-preview { display: grid; gap: 2px; margin: 0 0 12px; padding: 10px 12px; border: 1px dashed #c9b48a; background: #fbf5e6; }
+.promo-banner-preview .ops-eyebrow { margin: 0; color: #8a6420; font-size: 11px; }
+.promo-banner-preview strong { color: var(--green); font-family: var(--serif); font-size: 18px; font-weight: 500; }
+.promo-banner-preview span:last-child { color: var(--ops-muted); font-size: 14px; }
+.promo-blocked { margin: 0 0 10px; color: var(--ops-now); font-size: 14px; font-weight: 600; }
+.promo-results { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 4px; font-size: 15px; }
+.promo-results span { color: var(--ops-muted); }
+.promo-card .po-actions { flex-wrap: wrap; align-items: center; }
+.promo-card .text-link { display: inline-flex; align-items: center; gap: 4px; }
+.promo-builder { max-width: 720px; margin-top: 26px; padding: 16px 18px; border: 1px solid var(--line); background: #fff; }
+.promo-builder .po-group-title { margin-top: 0; }
+.promo-builder > .ops-muted { margin-bottom: 12px; }
+.promo-builder-pick { margin: 0 0 12px; padding: 0; border: 0; }
+.promo-side { margin: 0; }
+.promo-side p { margin: 0 0 6px; }
+.fresh-promo-link { margin: -6px 0 16px; }

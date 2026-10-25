@@ -26,6 +26,7 @@ Run it with the same `npm run dev` as the storefront. What it shows:
 - **The restock agent.** Every night at closing it runs *Observe stock → Plan orders → Draft POs → Request approval → Log*. Orders over $300 wait for **Approve order** or **Reject**, and a run pauses when one does. Approved orders arrive after the supplier's delivery time and refill the tins. Every decision is in the **Activity log**.
 - **Smarter ordering.** Ships items together, tops up to free shipping, takes bulk prices only when the stock will be used before it expires, keeps to a $3,000 weekly cash cap, and picks the cheapest approved supplier that delivers in time. Each order card has **Why this order?** and its savings. **Savings** compares 30 days of both.
 - **Scenarios.** Normal week, heat wave, supplier price increase, late delivery, matcha near expiry, and a large catering order. Each shows up as a notice (a weather alert, a supplier's delay notice, a price change, a use-by alert, or a new booking) with what the agent did about it.
+- **Promotions.** When a perishable batch would otherwise be thrown out, the agent suggests a sale on a drink that uses it and a two-drink bundle for an extra discount, with a forecast for each step (stock saved, profit on extra sales, and the discount given on sales you'd have made anyway). Nothing goes under a 60% margin, and nothing reaches the storefront until you click **Publish to storefront**. **Build a bundle** pairs any two drinks. Promotions tied to a batch end on their own once it's used up or reaches its use-by date. **Draft social post** writes a social caption and a text message that never mention expiry.
 - **Extras.** A freshness timeline with "use it up" specials, profit per drink with a what-if price slider, and an invoice check (ordered vs. arrived vs. billed).
 - **Presenter mode.** Hidden from the page: press **P** to start or end a six-step guided tour of the script below. Use ← → to move between steps, with an option for larger text.
 
@@ -33,9 +34,13 @@ Run it with the same `npm run dev` as the storefront. What it shows:
 
 Orders placed on the storefront show up in Behind the Counter within a few seconds: they appear in **Live orders** marked as website orders, their ingredients come off the shelf, and they count toward the agent's next restock. To demo it, open the storefront in one window and `/admin` (signed in) in another, side by side, and place an order. Website drinks are counted as iced; drinks without a pantry recipe (the coffee drinks) are listed but not tracked. Orders are kept in the server's memory; in production they would come from Square's order webhooks and a database.
 
+### Promotions on the storefront
+
+A published promotion shows on the storefront within a few seconds: a banner at the top, a **This week's sweet deals** section on the home page, sale prices and tags on the menu, and in the bag, the bundle discount plus a nudge to add the second drink. Prices come from one set of rules (`src/pricing.ts`) shared by the storefront, the checkout server, and the console. The server applies the owner's live promotions itself, as sale prices on Square line items and bundles as an order discount, so a browser can't set its own price. Publishing goes through an owner-only endpoint that only accepts drinks on the menu, at most 40% off a drink and 20% off a bundle. Promotions are kept in the server's memory, and the console is the source of truth: reloading or resetting it clears them from the storefront. To see one, choose the **Matcha near expiry** scenario and open **Promotions**.
+
 ### Optional: Claude mode
 
-Off by default. When it's on, Claude writes the morning brief, the plain-language order explanations, draft supplier messages, and invoice dispute drafts (from **Draft dispute message** on a flagged invoice) from a snapshot of the console's state. Every quantity and dollar amount still comes from the tested ordering rules. To enable it, add `ANTHROPIC_API_KEY` to `.env` (see `.env.example`), restart `npm run dev`, and turn on **Claude mode**. The key is read only by the local Node server (`server/ops-claude.js`) and never reaches the browser. With no key, or if a request fails, it falls back to the built-in standard text and shows a small notice.
+Off by default. When it's on, Claude writes the morning brief, the plain-language order explanations, draft supplier messages, invoice dispute drafts (from **Draft dispute message** on a flagged invoice), and promotion marketing (from **Draft social post**) from a snapshot of the console's state. Every quantity and dollar amount still comes from the tested ordering rules. To enable it, add `ANTHROPIC_API_KEY` to `.env` (see `.env.example`), restart `npm run dev`, and turn on **Claude mode**. The key is read only by the local Node server (`server/ops-claude.js`) and never reaches the browser. With no key, or if a request fails, it falls back to the built-in standard text and shows a small notice.
 
 ### Five-minute demo script
 
@@ -43,7 +48,7 @@ Off by default. When it's on, Claude writes the morning brief, the plain-languag
 2. **Orders drive stock:** click **Next order** a few times and watch the tins drain.
 3. **The agent:** run one week. The agent spots low stock, plans, drafts orders, and asks for approval. Approve one.
 4. **Smarter ordering:** open **Why this order?** on an order, then **Savings**. Read the one-line takeaway.
-5. **A curveball:** pick the heat wave or late delivery scenario and show how the agent adapts.
+5. **A curveball:** pick the heat wave or late delivery scenario and show how the agent adapts. Or pick matcha near expiry, publish the suggested sale and bundle from **Promotions**, and show them on the storefront.
 6. **Controls:** show the activity log and the approval limit. Close with: "It saves time and money, and a human stays in charge."
 
 The console's business rules live in `src/ops/engine` (plain TypeScript with unit tests); the screens are in `src/ops/ui`.

@@ -3,7 +3,7 @@ import { DRINKS, INGREDIENTS, SETTINGS, getIngredient, type Drink } from "./data
 import { dailyUsage } from "./forecast.ts";
 import { batchValueCents, formatQty, sortOldestFirst, type Batch } from "./inventory.ts";
 import { formatCents } from "./money.ts";
-import { dayConditions, expectedOrderCount, formatDay } from "./orders.ts";
+import { AVERAGE_DRINKS_PER_ORDER, dayConditions, expectedOrderCount, formatDay } from "./orders.ts";
 import { addLog, type World } from "./sim.ts";
 
 export type ExpiringBatch = {
@@ -16,7 +16,6 @@ export type ExpiringBatch = {
   leftoverCents: number;
 };
 
-const AVERAGE_DRINKS_PER_ORDER = 1.34;
 export const SPECIAL_BOOST = 0.8;
 
 /** Every perishable batch, with how much of it we expect to use before it expires (oldest first). */

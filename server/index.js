@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { z } from "zod";
 import { initialProducts } from "../src/catalog.ts";
+import { priceCart, saleUnitCents } from "../src/pricing.ts";
 import { createOwnerAuth } from "./admin-auth.js";
 import { registerOpsClaude } from "./ops-claude.js";
+import { createPromotionBoard, registerPromotions } from "./promotions.js";
 import { createOrderBook, orderItems } from "./shop-orders.js";
 
 const app = express();
@@ -47,10 +49,13 @@ const allowedCheckoutHosts = new Set([
 app.disable("x-powered-by");
 app.use(express.json({ limit: "32kb", strict: true }));
 
-// Behind the Counter: owner sign-in, and the storefront orders it shows as they arrive.
+// Behind the Counter: owner sign-in, the storefront orders it shows as they arrive, and the
+// promotions it publishes.
 const ownerAuth = createOwnerAuth();
 const orderBook = createOrderBook();
+const promotionBoard = createPromotionBoard();
 ownerAuth.register(app);
+registerPromotions(app, { board: promotionBoard, productsById, guard: ownerAuth.requireOwner });
 
 function validateConfiguration() {
   if (environment !== "sandbox" && environment !== "production") {
@@ -86,7 +91,9 @@ function enforceRateLimit(req, res, next) {
   return next();
 }
 
-function buildLineItems(items) {
+const regularCents = (product) => Math.round((product.salePrice ?? product.price) * 100);
+
+function buildLineItems(items, promotions = []) {
   return items.map(({ productId, quantity, selections }) => {
     const product = productsById.get(productId);
     if (!product || !product.available || product.stock !== undefined && product.stock <= 0) {
@@ -123,12 +130,34 @@ function buildLineItems(items) {
       name: product.name,
       quantity: String(quantity),
       base_price_money: {
-        amount: Math.round((product.salePrice ?? product.price) * 100),
+        amount: saleUnitCents(product.id, regularCents(product), promotions).cents,
         currency: "USD",
       },
       ...(modifiers.length > 0 ? { modifiers } : {}),
     };
   });
+}
+
+/**
+ * Trusted prices for an order, with the owner's live promotions: sale prices go on the line items
+ * and bundle savings become order-level discounts, so Square charges what the storefront showed.
+ */
+function priceOrder(items, promotions = promotionBoard.list()) {
+  const lineItems = buildLineItems(items, promotions);
+  const priced = priceCart(items.map((item, index) => ({
+    productId: item.productId,
+    quantity: item.quantity,
+    unitCents: regularCents(productsById.get(item.productId)),
+    extrasCents: (lineItems[index].modifiers ?? []).reduce((sum, modifier) => sum + modifier.base_price_money.amount, 0),
+  })), promotions);
+  const discounts = priced.bundles.map((bundle) => ({
+    uid: bundle.promotionId,
+    name: `Bundle: ${bundle.productIds.map((id) => productsById.get(id)?.name ?? id).join(" + ")}`,
+    type: "FIXED_AMOUNT",
+    amount_money: { amount: bundle.discountCents, currency: "USD" },
+    scope: "ORDER",
+  }));
+  return { lineItems, discounts, subtotalCents: priced.subtotalCents, savingsCents: priced.savingsCents };
 }
 
 function validatePaymentUrl(value) {
@@ -165,9 +194,9 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
     return res.status(400).json({ error: "Some checkout details are missing or invalid. Please review the form and your bag." });
   }
 
-  let lineItems;
+  let pricing;
   try {
-    lineItems = buildLineItems(parsed.data.items);
+    pricing = priceOrder(parsed.data.items);
   } catch (error) {
     return res.status(400).json({ error: error instanceof Error ? error.message : "One or more items could not be checked." });
   }
@@ -190,7 +219,8 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
     idempotency_key: parsed.data.idempotencyKey,
     order: {
       location_id: locationId,
-      line_items: lineItems,
+      line_items: pricing.lineItems,
+      ...(pricing.discounts.length > 0 ? { discounts: pricing.discounts } : {}),
       pricing_options: { auto_apply_taxes: true },
       fulfillments: [{
         type: "PICKUP",
@@ -262,13 +292,14 @@ app.post("/api/orders/pickup", limitPickupOrders, (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Some order details are missing or invalid. Please review the form and your bag." });
   }
+  let pricing;
   try {
-    buildLineItems(parsed.data.items);
+    pricing = priceOrder(parsed.data.items);
   } catch (error) {
     return res.status(400).json({ error: error instanceof Error ? error.message : "One or more items could not be checked." });
   }
   const order = orderBook.add({ idempotencyKey: parsed.data.idempotencyKey, source: "pickup", pickupTime: parsed.data.pickupTime, items: orderItems(parsed.data.items, productsById) });
-  return res.status(201).json({ orderNumber: order.number });
+  return res.status(201).json({ orderNumber: order.number, subtotalCents: pricing.subtotalCents, savingsCents: pricing.savingsCents });
 });
 
 app.get("/api/admin/orders", ownerAuth.requireOwner, (req, res) => {
@@ -301,4 +332,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   });
 }
 
-export { app, buildLineItems, validatePaymentUrl };
+export { app, buildLineItems, priceOrder, validatePaymentUrl };

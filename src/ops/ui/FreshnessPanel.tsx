@@ -33,7 +33,7 @@ export function SpecialCard({ suggestion, world, onStart }: { suggestion: Specia
 
 const drinkName = (id: string) => drinkById.get(id)?.name ?? id;
 
-export function FreshnessPanel({ world, onStart }: { world: World; onStart: () => void }) {
+export function FreshnessPanel({ world, onStart, promoIdeas = 0, onPromotions }: { world: World; onStart: () => void; promoIdeas?: number; onPromotions?: () => void }) {
   const outlook = freshnessOutlook(world).filter((item) => item.batch.expiresDay !== null && item.batch.expiresDay - world.day <= HORIZON);
   const atRisk = outlook.filter((item) => item.leftover >= 1);
   const worst = [...atRisk].sort((a, b) => b.leftoverCents - a.leftoverCents)[0];
@@ -45,6 +45,7 @@ export function FreshnessPanel({ world, onStart }: { world: World; onStart: () =
       <p className="compare-takeaway">{takeaway}</p>
       <p className="ops-muted compare-sub">Perishable batches expiring in the next {HORIZON} days, soonest first, at today’s pace of use (oldest batch used first).</p>
       <SpecialCard suggestion={world.specialSuggestion} world={world} onStart={onStart} />
+      {promoIdeas > 0 && onPromotions && <p className="fresh-promo-link"><button className="text-link" onClick={onPromotions}>{promoIdeas === 1 ? "A sale or bundle could" : `${promoIdeas} sale and bundle ideas could`} use more of it up. See Promotions →</button></p>}
       {outlook.length === 0 ? <p className="ops-muted">Nothing expires in the next {HORIZON} days.</p> : (
         <figure className="fresh-chart">
           <div className="fresh-axis" aria-hidden="true">

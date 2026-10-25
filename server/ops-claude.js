@@ -16,11 +16,12 @@ const TASKS = {
   brief: "Write this morning's brief for the owner in 3 to 5 sentences: how yesterday went, anything waiting for their approval, what's running low, and anything else they should look at today. Lead with what needs them.",
   explain: "Explain the purchase order in the snapshot's \"order\" field in 2 to 4 sentences: what it buys, why the agent ordered it now, and how it saves money. If it needs approval, say why.",
   dispute: "Draft a short, polite message to the supplier about the invoice for the purchase order in the snapshot's \"order\" field. List each problem in \"order.invoice.issues\" with its amount, say what the total overcharge is if the issues give it, and ask for a corrected invoice or a credit. Keep a friendly tone: they're a partner. Sign it \"The Fig & Froth team\". Do not include email addresses, phone numbers, or account details. Plain text, no subject line.",
+  promo: "Write marketing for the promotion in the snapshot's \"promotion\" field, for the shop's customers rather than the owner. Give two parts, each starting on its own line with its label: \"Social post:\" (2 or 3 short, warm sentences and at most two hashtags) and \"Text message:\" (one sentence under 160 characters). Use the exact drinks, percent off, and prices given, and say to order ahead for pickup. Never say or hint that an ingredient is expiring, old, overstocked, or would be thrown out; \"while it lasts\" is fine. If \"pairedBundle\" is set, mention the extra savings for pairing. No prices or claims that aren't in the snapshot, and no emoji.",
   "supplier-message": "Draft a short, friendly message to the supplier for the purchase order in the snapshot's \"order\" field, listing the items and asking them to confirm the delivery date. Sign it \"The Fig & Froth team\". Do not include email addresses, phone numbers, or account details. Plain text, no subject line.",
 };
 
 const requestSchema = z.object({
-  kind: z.enum(["brief", "explain", "supplier-message", "dispute"]),
+  kind: z.enum(["brief", "explain", "supplier-message", "dispute", "promo"]),
   snapshot: z.record(z.unknown()),
 }).strict();
 

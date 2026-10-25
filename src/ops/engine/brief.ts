@@ -1,21 +1,57 @@
 // Words, not decisions. Demo mode writes these from templates; Claude mode asks the local server
 // to write them from the same snapshot. Quantities and money always come from the engine.
-import { getIngredient, getSupplier, SETTINGS } from "./data.ts";
+import { bundlePriceCents, type PromotionKind } from "../../pricing.ts";
+import { drinkById, getIngredient, getSupplier, SETTINGS } from "./data.ts";
 import { formatQty } from "./inventory.ts";
 import { formatCents, formatDollars } from "./money.ts";
 import { formatDay } from "./orders.ts";
 import { needsAttention, statusLabel, summarizePantry } from "./pantry.ts";
 import { threeWayMatch } from "./match.ts";
+import { currentPriceCents, promotionCopy, promotionTitle, suggestPromotions } from "./promotions.ts";
 import { packPhrase } from "./purchasing.ts";
 import { getScenario } from "./scenarios.ts";
-import type { PurchaseOrder, World } from "./sim.ts";
+import { livePromotions, type PurchaseOrder, type World } from "./sim.ts";
 
-export type WritingKind = "brief" | "explain" | "supplier-message" | "dispute";
+export type WritingKind = "brief" | "explain" | "supplier-message" | "dispute" | "promo";
+
+/** A promotion to write marketing for: one that's live, or a suggestion at the step the owner picked. */
+export type PromoPost = { kind: PromotionKind; productIds: string[]; percentOff: number };
+
+const drinkName = (id: string) => drinkById.get(id)?.name ?? id;
+
+/** The prices a customer would see for a promotion, and any bundle that pairs with a sale. */
+function promoFacts(world: World, promo: PromoPost) {
+  const names = promo.productIds.map(drinkName);
+  if (promo.kind === "discount") {
+    const regular = drinkById.get(promo.productIds[0])!.priceCents;
+    const pairedBundle = livePromotions(world).find((live) => live.kind === "bundle" && live.productIds.includes(promo.productIds[0]));
+    return {
+      type: "Sale" as const,
+      drinks: names,
+      percentOff: promo.percentOff,
+      regularPrice: formatCents(regular),
+      promoPrice: formatCents(regular - Math.round((regular * promo.percentOff) / 100)),
+      pairedBundle: pairedBundle ? { withDrink: drinkName(pairedBundle.productIds.find((id) => id !== promo.productIds[0])!), extraPercentOff: pairedBundle.percentOff } : null,
+      storefrontBanner: promotionCopy(promo.kind, promo.productIds, promo.percentOff).headline,
+    };
+  }
+  const regular = promo.productIds.reduce((sum, id) => sum + drinkById.get(id)!.priceCents, 0);
+  const [first, second] = promo.productIds.map((id) => currentPriceCents(world, id));
+  return {
+    type: "Bundle" as const,
+    drinks: names,
+    percentOff: promo.percentOff,
+    regularPrice: formatCents(regular),
+    promoPrice: formatCents(bundlePriceCents(first, second, promo.percentOff)),
+    pairedBundle: null,
+    storefrontBanner: promotionCopy(promo.kind, promo.productIds, promo.percentOff).headline,
+  };
+}
 
 const daysText = (days: number) => (!Number.isFinite(days) ? "plenty of stock" : days < 1 ? "under a day of stock" : `${days.toFixed(1).replace(/\.0$/, "")} days of stock`);
 
 /** A compact, plain-data picture of the shop for writing. Everything in it was computed by the engine. */
-export function buildSnapshot(world: World, poId?: string) {
+export function buildSnapshot(world: World, poId?: string, promo?: PromoPost) {
   const tins = summarizePantry(world);
   const yesterday = world.days.at(-1);
   const po = poId ? world.purchaseOrders.find((candidate) => candidate.id === poId) : undefined;
@@ -44,7 +80,9 @@ export function buildSnapshot(world: World, poId?: string) {
     arrivingToday: world.purchaseOrders.filter((order) => order.receivedDay === world.day).map((order) => `${order.id} from ${getSupplier(order.supplierId).name}`),
     invoicesToReview: world.purchaseOrders.filter((order) => order.status === "flagged").map((order) => ({ id: order.id, notes: order.matchNotes ?? [] })),
     special: world.specialSuggestion?.text ?? null,
+    promotions: { liveOnStorefront: livePromotions(world).map(promotionTitle), ideas: suggestPromotions(world).length },
     order: po ? describePo(po) : undefined,
+    promotion: promo ? promoFacts(world, promo) : undefined,
   };
 }
 
@@ -69,7 +107,35 @@ export function demoBrief(world: World): string {
   else parts.push("Nothing on the shelf is urgent.");
   if (snapshot.invoicesToReview.length > 0) parts.push(`${snapshot.invoicesToReview.length === 1 ? "One invoice doesn’t" : `${snapshot.invoicesToReview.length} invoices don’t`} match what we ordered and received.`);
   if (snapshot.special) parts.push("There’s a “use it up” special suggestion on the Freshness tab.");
+  if (snapshot.promotions.liveOnStorefront.length > 0) parts.push(`Live on the storefront: ${list(snapshot.promotions.liveOnStorefront)}.`);
+  if (snapshot.promotions.ideas > 0) parts.push(`${snapshot.promotions.ideas === 1 ? "A promotion idea is" : `${snapshot.promotions.ideas} promotion ideas are`} waiting on the Promotions tab.`);
   return parts.join(" ");
+}
+
+/** Standard marketing for a promotion: a social caption and a text message. Never mentions expiry. */
+export function demoPromoPost(world: World, promo: PromoPost): string {
+  const facts = promoFacts(world, promo);
+  if (facts.type === "Sale") {
+    const name = facts.drinks[0];
+    const pairing = facts.pairedBundle ? ` Pair it with the ${facts.pairedBundle.withDrink} and save another ${facts.pairedBundle.extraPercentOff}%.` : "";
+    return [
+      "Social post:",
+      `Last call on the ${name}: it’s ${facts.percentOff}% off, now ${facts.promoPrice} (normally ${facts.regularPrice}), while this batch lasts.${pairing} Whisked to order in Paterson. Order ahead for pickup.`,
+      "#figandfroth #matcha",
+      "",
+      "Text message:",
+      `Fig & Froth: the ${name} is ${facts.percentOff}% off (${facts.promoPrice}) while it lasts. Order ahead for pickup.`,
+    ].join("\n");
+  }
+  const [first, second] = facts.drinks;
+  return [
+    "Social post:",
+    `Better together: the ${first} and the ${second} for ${facts.promoPrice} (normally ${facts.regularPrice}). Bring a friend, or keep both for yourself. Put both in your bag and the bundle price applies on its own.`,
+    "#figandfroth #matcha",
+    "",
+    "Text message:",
+    `Fig & Froth: ${first} + ${second}, ${facts.promoPrice} for both. Order ahead for pickup.`,
+  ].join("\n");
 }
 
 /** Demo-mode plain-language explanation of a purchase order: a short summary of its reasons. */

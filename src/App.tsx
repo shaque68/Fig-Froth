@@ -2,10 +2,11 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownWideNarrow, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight,
   Clock3, Coffee, Instagram, Leaf, MapPin, Menu as MenuIcon, Minus, Plus,
-  Search, ShoppingBag, SlidersHorizontal, Sparkles, Trash2, X,
+  Search, ShoppingBag, SlidersHorizontal, Sparkles, Tag, Trash2, X,
 } from "lucide-react";
 import { AdminGate } from "./AdminGate";
 import { initialProducts, money, type ModifierGroup, type Product } from "./catalog";
+import { bundlePriceCents, priceCart, saleUnitCents, type PricedCart, type StorePromotion } from "./pricing";
 
 type View = "home" | "menu" | "cart" | "admin" | "checkout" | "confirmation" | "ops";
 type CartItem = { key: string; productId: string; quantity: number; selections: Record<string, string> };
@@ -64,6 +65,42 @@ function isAvailable(product: Product) {
   return product.available && (product.stock === undefined || product.stock > 0);
 }
 
+const toCents = (dollars: number) => Math.round(dollars * 100);
+const cents = (amount: number) => money(amount / 100);
+const addOnCents = (product: Product, selections: Record<string, string>) =>
+  toCents(product.modifiers.reduce((sum, group) => sum + (group.options.find((option) => option.name === selections[group.name])?.price ?? 0), 0));
+
+/** What a drink costs right now with the shop's live promotions, and how to describe them. */
+type Offer = { nowCents: number; wasCents: number | null; percentOff?: number; bundleNote?: string };
+
+function offerFor(product: Product, promotions: StorePromotion[], productById: Map<string, Product>): Offer {
+  const base = toCents(product.salePrice ?? product.price);
+  const sale = saleUnitCents(product.id, base, promotions);
+  const discount = promotions.find((promo) => promo.id === sale.promotionId);
+  const bundle = promotions.find((promo) => promo.kind === "bundle" && promo.productIds.includes(product.id) && promo.productIds.every((id) => productById.get(id)?.available));
+  const partner = bundle && productById.get(bundle.productIds.find((id) => id !== product.id) ?? "");
+  return {
+    nowCents: sale.cents,
+    wasCents: sale.promotionId || product.salePrice != null ? toCents(product.price) : null,
+    percentOff: discount?.percentOff,
+    bundleNote: bundle && partner ? `Save ${bundle.percentOff}% when you pair it with the ${partner.name}` : undefined,
+  };
+}
+
+/** A live promotion with its drinks and prices, for the storefront's deals section. */
+type Deal = { promo: StorePromotion; products: Product[]; nowCents: number; wasCents: number };
+
+function dealsFor(promotions: StorePromotion[], productById: Map<string, Product>): Deal[] {
+  return promotions.flatMap((promo) => {
+    const products = promo.productIds.map((id) => productById.get(id));
+    if (products.some((product) => !product || !isAvailable(product))) return [];
+    const list = products as Product[];
+    const now = list.map((product) => saleUnitCents(product.id, toCents(product.salePrice ?? product.price), promotions).cents);
+    const nowCents = promo.kind === "bundle" ? bundlePriceCents(now[0], now[1], promo.percentOff) : now[0];
+    return [{ promo, products: list, nowCents, wasCents: list.reduce((sum, product) => sum + toCents(product.price), 0) }];
+  });
+}
+
 function App() {
   const [products, setProducts] = useState<Product[]>(() => readStorage(CATALOG_KEY, initialProducts));
   const [cart, setCart] = useState<CartItem[]>(() => readStorage(CART_KEY, []));
@@ -81,7 +118,8 @@ function App() {
   const [checkoutAvailable, setCheckoutAvailable] = useState<boolean | null>(null);
   const [checkoutEnvironment, setCheckoutEnvironment] = useState("sandbox");
   const [pickupAvailable, setPickupAvailable] = useState(false);
-  const [placedOrder, setPlacedOrder] = useState<{ number: string; pickupTime: string } | null>(null);
+  const [placedOrder, setPlacedOrder] = useState<{ number: string; pickupTime: string; subtotalCents?: number; savingsCents?: number } | null>(null);
+  const [promotions, setPromotions] = useState<StorePromotion[]>([]);
   const [checkoutError, setCheckoutError] = useState("");
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -129,6 +167,22 @@ function App() {
       });
     return () => { active = false; };
   }, []);
+  // The owner publishes sales and bundles from Behind the Counter; check for changes every few seconds.
+  useEffect(() => {
+    let active = true;
+    const load = () => fetch("/api/promotions")
+      .then((response) => (response.ok ? response.json() as Promise<{ promotions?: StorePromotion[] }> : null))
+      .then((result) => {
+        if (!active || !result?.promotions) return;
+        const next = result.promotions;
+        setPromotions((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
+      })
+      .catch(() => { /* Promotions are optional; regular prices still apply. */ });
+    void load();
+    const timer = window.setInterval(load, 10_000);
+    window.addEventListener("focus", load);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", load); };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 3200);
@@ -136,16 +190,15 @@ function App() {
   }, [toast]);
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const offers = useMemo(() => new Map(products.map((product) => [product.id, offerFor(product, promotions, productById)])), [products, promotions, productById]);
+  const deals = useMemo(() => dealsFor(promotions, productById), [promotions, productById]);
   const itemCount = cart.reduce((total, item) => total + item.quantity, 0);
-  const subtotal = cart.reduce((total, item) => {
+  // Same rules the checkout server charges with (src/pricing.ts).
+  const pricedCart = useMemo(() => priceCart(cart.flatMap((item) => {
     const product = productById.get(item.productId);
-    if (!product) return total;
-    const modifiers = product.modifiers.reduce((sum, group) => {
-      const option = group.options.find((candidate) => candidate.name === item.selections[group.name]);
-      return sum + (option?.price ?? 0);
-    }, 0);
-    return total + ((product.salePrice ?? product.price) + modifiers) * item.quantity;
-  }, 0);
+    return product ? [{ productId: product.id, quantity: item.quantity, unitCents: toCents(product.salePrice ?? product.price), extrasCents: addOnCents(product, item.selections) }] : [];
+  }), promotions), [cart, productById, promotions]);
+  const subtotal = pricedCart.subtotalCents / 100;
   const tax = subtotal * 0.06625;
   const total = subtotal + tax;
   const blockedCartItems = Array.from(new Set(cart.flatMap((item) => {
@@ -162,10 +215,11 @@ function App() {
       const searchMatches = !query || `${product.name} ${product.description} ${product.category}`.toLowerCase().includes(query);
       return categoryMatches && searchMatches;
     });
-    if (sortOrder === "price-low") return [...filtered].sort((a, b) => (a.salePrice ?? a.price) - (b.salePrice ?? b.price));
-    if (sortOrder === "price-high") return [...filtered].sort((a, b) => (b.salePrice ?? b.price) - (a.salePrice ?? a.price));
+    const now = (product: Product) => offers.get(product.id)?.nowCents ?? toCents(product.salePrice ?? product.price);
+    if (sortOrder === "price-low") return [...filtered].sort((a, b) => now(a) - now(b));
+    if (sortOrder === "price-high") return [...filtered].sort((a, b) => now(b) - now(a));
     return filtered;
-  }, [menuCategory, products, search, sortOrder]);
+  }, [menuCategory, products, search, sortOrder, offers]);
 
   function addToCart(product: Product, selections: Record<string, string>, quantity: number) {
     if (!isAvailable(product)) {
@@ -248,10 +302,10 @@ function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...checkoutRequest, idempotencyKey: checkoutAttempt.current.key }),
         });
-        const placed = await pickupResponse.json() as { orderNumber?: string; error?: string };
+        const placed = await pickupResponse.json() as { orderNumber?: string; subtotalCents?: number; savingsCents?: number; error?: string };
         if (!pickupResponse.ok || !placed.orderNumber) throw new Error(placed.error || "Couldn’t place your order. Please try again.");
         checkoutAttempt.current = null;
-        setPlacedOrder({ number: placed.orderNumber, pickupTime });
+        setPlacedOrder({ number: placed.orderNumber, pickupTime, subtotalCents: placed.subtotalCents, savingsCents: placed.savingsCents });
         setCart([]);
         setIsCheckingOut(false);
         showView("confirmation");
@@ -306,7 +360,9 @@ function App() {
 
   return (
     <div className="site-shell">
-      <div className="announcement"><Sparkles size={13} /> A little ritual, a lot of joy <span>·</span> Paterson, NJ</div>
+      {deals.length > 0
+        ? <div className="announcement announcement-deal"><Tag size={13} /> {deals[0].promo.headline}{deals.length > 1 && <span>· and {deals.length - 1} more {deals.length === 2 ? "treat" : "treats"}</span>}<button onClick={() => openMenu()}>Order ahead <ArrowRight size={12} /></button></div>
+        : <div className="announcement"><Sparkles size={13} /> A little ritual, a lot of joy <span>·</span> Paterson, NJ</div>}
       <header className="site-header">
         <a className="wordmark" href="#home" onClick={(event) => { event.preventDefault(); showView("home"); }}>
           <span className="brand-mark"><Leaf size={22} strokeWidth={1.7} /></span>
@@ -326,23 +382,23 @@ function App() {
 
       <main>
         {squareReturn && <div className="payment-return-banner" role="status"><Check size={18} /><p><strong>You’re back from Square Checkout.</strong> Check your Square receipt to confirm payment. Your bag stays here until you’re ready.</p><button aria-label="Dismiss payment return message" onClick={() => setSquareReturn(false)}><X size={16} /></button></div>}
-        {view === "home" && <HomePage products={featured} onShop={() => openMenu()} onSelect={setSelectedProduct} onCategory={openMenu} />}
-        {view === "menu" && <MenuPage products={displayedProducts} categories={availableCategories} category={menuCategory} setCategory={setMenuCategory} search={search} setSearch={setSearch} sortOrder={sortOrder} setSortOrder={setSortOrder} onSelect={setSelectedProduct} />}
-        {view === "cart" && <CartPage cart={cart} products={productById} blockedItems={blockedCartItems} subtotal={subtotal} tax={tax} total={total} pickupTime={pickupTime} setPickupTime={setPickupTime} coupon={coupon} setCoupon={setCoupon} couponMessage={couponMessage} applyCoupon={applyCoupon} onQuantity={updateQuantity} onMenu={() => openMenu()} onCheckout={() => showView("checkout")} onLocation={() => setLocationOpen(true)} />}
+        {view === "home" && <HomePage products={featured} offers={offers} deals={deals} onShop={() => openMenu()} onSelect={setSelectedProduct} onCategory={openMenu} />}
+        {view === "menu" && <MenuPage products={displayedProducts} offers={offers} categories={availableCategories} category={menuCategory} setCategory={setMenuCategory} search={search} setSearch={setSearch} sortOrder={sortOrder} setSortOrder={setSortOrder} onSelect={setSelectedProduct} />}
+        {view === "cart" && <CartPage cart={cart} products={productById} offers={offers} priced={pricedCart} promotions={promotions} onSelect={setSelectedProduct} blockedItems={blockedCartItems} subtotal={subtotal} tax={tax} total={total} pickupTime={pickupTime} setPickupTime={setPickupTime} coupon={coupon} setCoupon={setCoupon} couponMessage={couponMessage} applyCoupon={applyCoupon} onQuantity={updateQuantity} onMenu={() => openMenu()} onCheckout={() => showView("checkout")} onLocation={() => setLocationOpen(true)} />}
         {view === "confirmation" && placedOrder && <ConfirmationPage order={placedOrder} onMenu={() => openMenu()} />}
         {view === "checkout" && <CheckoutPage items={cart} blockedItems={blockedCartItems} pickupTime={pickupTime} checkoutAvailable={checkoutAvailable} pickupAvailable={pickupAvailable} environment={checkoutEnvironment} error={checkoutError} isSubmitting={isCheckingOut} onBack={() => showView("cart")} onSubmit={startSquareCheckout} />}
       </main>
 
       <Footer onAdmin={() => showView("ops")} onMenu={() => openMenu()} />
 
-      {selectedProduct && <ProductDialog product={selectedProduct} onClose={() => setSelectedProduct(null)} onAdd={addToCart} />}
+      {selectedProduct && <ProductDialog product={selectedProduct} offer={offers.get(selectedProduct.id)} onClose={() => setSelectedProduct(null)} onAdd={addToCart} />}
       {locationOpen && <LocationDialog onClose={() => setLocationOpen(false)} />}
       {toast && <div className={`toast toast-${toast.kind}`} role="status"><Check size={17} />{toast.message}<button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={15} /></button></div>}
     </div>
   );
 }
 
-function HomePage({ products, onShop, onSelect, onCategory }: { products: Product[]; onShop: () => void; onSelect: (product: Product) => void; onCategory: (category: string) => void }) {
+function HomePage({ products, offers, deals, onShop, onSelect, onCategory }: { products: Product[]; offers: Map<string, Offer>; deals: Deal[]; onShop: () => void; onSelect: (product: Product) => void; onCategory: (category: string) => void }) {
   return (
     <div className="home-page">
       <section className="hero">
@@ -374,9 +430,11 @@ function HomePage({ products, onShop, onSelect, onCategory }: { products: Produc
         <div><HeartIcon /><span>Always made with love</span></div>
       </section>
 
+      {deals.length > 0 && <DealsSection deals={deals} onSelect={onSelect} />}
+
       <section className="featured-section">
         <div className="section-heading"><div><p className="eyebrow">THE CURRENT CRUSHES</p><h2>A few <em>favorites.</em></h2></div><button className="text-button view-menu" onClick={onShop}>Sip your way through <ArrowRight size={16} /></button></div>
-        {products.length > 0 ? <div className="product-grid home-product-grid">{products.slice(0, 4).map((product) => <ProductCard key={product.id} product={product} onSelect={onSelect} />)}</div> : <div className="empty-featured"><Coffee /><p>We’re brewing up the next favorite.</p></div>}
+        {products.length > 0 ? <div className="product-grid home-product-grid">{products.slice(0, 4).map((product) => <ProductCard key={product.id} product={product} offer={offers.get(product.id)} onSelect={onSelect} />)}</div> : <div className="empty-featured"><Coffee /><p>We’re brewing up the next favorite.</p></div>}
         <div className="menu-teaser"><div className="teaser-ornament">✳</div><div><p className="eyebrow">A LITTLE SOMETHING FOR EVERY MOOD</p><h3>Find your <em>kind of cozy.</em></h3></div><button className="button button-outline" onClick={onShop}>Explore the full menu <ArrowRight size={16} /></button></div>
       </section>
       <section className="visit-banner"><div className="visit-stamp">POURED<br />WITH <span>♥</span><br />IN NJ</div><div><p className="eyebrow">COME SAY HELLO</p><h2>Your new favorite<br /><em>little corner.</em></h2><p>Paterson, New Jersey</p></div><button className="button button-cream" onClick={() => onCategory("All sips")}>Come on in <ArrowRight size={16} /></button></section>
@@ -384,29 +442,51 @@ function HomePage({ products, onShop, onSelect, onCategory }: { products: Produc
   );
 }
 
+function DealsSection({ deals, onSelect }: { deals: Deal[]; onSelect: (product: Product) => void }) {
+  return (
+    <section className="deals-section" aria-labelledby="deals-title">
+      <div className="section-heading"><div><p className="eyebrow">LITTLE TREATS, FOR A LITTLE WHILE</p><h2 id="deals-title">This week’s <em>sweet deals.</em></h2></div></div>
+      <div className="deals-grid">
+        {deals.map(({ promo, products, nowCents, wasCents }) => (
+          <article key={promo.id} className={`deal-card deal-${promo.kind}`}>
+            <div className="deal-art">{products.map((product) => <DrinkArt key={product.id} product={product} />)}<span className="product-tag deal-tag">{promo.kind === "bundle" ? `BUNDLE · ${promo.percentOff}% OFF` : `${promo.percentOff}% OFF`}</span></div>
+            <div className="deal-info">
+              <h3>{promo.headline}</h3>
+              <p>{promo.detail}</p>
+              <p className="deal-price"><del>{cents(wasCents)}</del> <strong>{cents(nowCents)}</strong>{promo.kind === "bundle" ? <span> for both</span> : null}</p>
+              <div className="deal-actions">{products.map((product) => <button key={product.id} className="product-add" onClick={() => onSelect(product)}>{promo.kind === "bundle" ? `Choose the ${product.name}` : "Make it yours"} <Plus size={15} /></button>)}</div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function HeartIcon() {
   return <span className="heart-icon" aria-hidden="true">♡</span>;
 }
 
-function ProductCard({ product, onSelect }: { product: Product; onSelect: (product: Product) => void }) {
+function ProductCard({ product, offer, onSelect }: { product: Product; offer?: Offer; onSelect: (product: Product) => void }) {
   const available = isAvailable(product);
+  const tag = offer?.percentOff ? `${offer.percentOff}% OFF` : offer?.bundleNote ? "BUNDLE & SAVE" : product.featured ? "A HOUSE FAVORITE" : null;
   return (
     <article className="product-card">
       <button className="product-art-button" onClick={() => available && onSelect(product)} aria-label={`View ${product.name}`} disabled={!available}>
         <DrinkArt product={product} />
-        {product.featured && <span className="product-tag">A HOUSE FAVORITE</span>}
+        {tag && available && <span className={`product-tag ${offer?.percentOff || offer?.bundleNote ? "deal-tag" : ""}`}>{tag}</span>}
         {!available && <span className="sold-out-tag">SOLD OUT FOR NOW</span>}
       </button>
       <div className="product-card-info">
-        <div><p className="product-category">{product.category}</p><h3>{product.name}</h3><p className="product-description">{product.description}</p></div>
-        <div className="product-price">{product.salePrice != null && <del>{money(product.price)}</del>}<strong>{money(product.salePrice ?? product.price)}</strong></div>
+        <div><p className="product-category">{product.category}</p><h3>{product.name}</h3><p className="product-description">{product.description}</p>{offer?.bundleNote && available && <p className="product-bundle-note">{offer.bundleNote}</p>}</div>
+        <div className="product-price">{offer?.wasCents != null && <del>{cents(offer.wasCents)}</del>}<strong>{offer ? cents(offer.nowCents) : money(product.salePrice ?? product.price)}</strong></div>
       </div>
       <button className={`product-add ${!available ? "disabled" : ""}`} disabled={!available} onClick={() => onSelect(product)}>{available ? <>Make it yours <Plus size={15} /></> : "Currently sold out"}</button>
     </article>
   );
 }
 
-function MenuPage({ products, categories, category, setCategory, search, setSearch, sortOrder, setSortOrder, onSelect }: { products: Product[]; categories: string[]; category: string; setCategory: (value: string) => void; search: string; setSearch: (value: string) => void; sortOrder: string; setSortOrder: (value: string) => void; onSelect: (product: Product) => void }) {
+function MenuPage({ products, offers, categories, category, setCategory, search, setSearch, sortOrder, setSortOrder, onSelect }: { products: Product[]; offers: Map<string, Offer>; categories: string[]; category: string; setCategory: (value: string) => void; search: string; setSearch: (value: string) => void; sortOrder: string; setSortOrder: (value: string) => void; onSelect: (product: Product) => void }) {
   return (
     <section className="menu-page page-container">
       <div className="breadcrumbs"><button>Home</button><ChevronRight size={14} /><span>The menu</span></div>
@@ -415,18 +495,18 @@ function MenuPage({ products, categories, category, setCategory, search, setSear
         <div className="category-pills" aria-label="Filter by category">{["All sips", ...categories].map((item) => <button key={item} className={category === item ? "pill-active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div>
         <div className="menu-tools"><label className="search-control"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find your sip..." aria-label="Search menu" />{search && <button aria-label="Clear search" onClick={() => setSearch("")}><X size={14} /></button>}</label><label className="sort-control"><SlidersHorizontal size={16} /><select aria-label="Sort menu" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="featured">Our favorites first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option></select><ChevronDown size={14} /></label></div>
       </div>
-      {products.length > 0 ? <div className="product-grid menu-product-grid">{products.map((product) => <ProductCard key={product.id} product={product} onSelect={onSelect} />)}</div> : <div className="no-results"><div>☕</div><h2>No sips found just yet.</h2><p>Try another search or browse all our little favorites.</p><button className="button button-dark" onClick={() => { setSearch(""); setCategory("All sips"); }}>Show me everything</button></div>}
+      {products.length > 0 ? <div className="product-grid menu-product-grid">{products.map((product) => <ProductCard key={product.id} product={product} offer={offers.get(product.id)} onSelect={onSelect} />)}</div> : <div className="no-results"><div>☕</div><h2>No sips found just yet.</h2><p>Try another search or browse all our little favorites.</p><button className="button button-dark" onClick={() => { setSearch(""); setCategory("All sips"); }}>Show me everything</button></div>}
       <div className="allergen-note"><Leaf size={18} /><p>Have an allergy or a question about ingredients? <a href="mailto:figandfroth@gmail.com">Send us a note</a> and we’ll take good care of you.</p></div>
     </section>
   );
 }
 
-function ProductDialog({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (product: Product, selections: Record<string, string>, quantity: number) => void }) {
+function ProductDialog({ product, offer, onClose, onAdd }: { product: Product; offer?: Offer; onClose: () => void; onAdd: (product: Product, selections: Record<string, string>, quantity: number) => void }) {
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
   const modifierPrice = product.modifiers.reduce((total, group) => total + (group.options.find((option) => option.name === selections[group.name])?.price ?? 0), 0);
-  const itemPrice = (product.salePrice ?? product.price) + modifierPrice;
+  const itemPrice = (offer ? offer.nowCents / 100 : product.salePrice ?? product.price) + modifierPrice;
   function add() {
     const missing = product.modifiers.find((group) => group.required && !selections[group.name]);
     if (missing) { setError(`Choose an option for ${missing.name.toLowerCase()} to continue.`); document.getElementById(`group-${missing.name}`)?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
@@ -437,7 +517,7 @@ function ProductDialog({ product, onClose, onAdd }: { product: Product; onClose:
       <section className="product-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-product-name">
         <button className="dialog-close" aria-label="Close product details" onClick={onClose}><X size={20} /></button>
         <div className="dialog-art"><DrinkArt product={product} /></div>
-        <div className="dialog-content"><p className="product-category">{product.category} · MADE WITH LOVE</p><h2 id="dialog-product-name">{product.name}</h2><strong className="dialog-price">{money(itemPrice)}{modifierPrice > 0 && <small> with your choices</small>}</strong><p className="dialog-description">{product.description}</p>
+        <div className="dialog-content"><p className="product-category">{product.category} · MADE WITH LOVE</p><h2 id="dialog-product-name">{product.name}</h2><strong className="dialog-price">{offer?.percentOff && <del>{cents(offer.wasCents! + toCents(modifierPrice))}</del>}{money(itemPrice)}{modifierPrice > 0 && <small> with your choices</small>}</strong>{offer?.bundleNote && <p className="dialog-deal"><Tag size={13} /> {offer.bundleNote}. The bundle price applies in your bag.</p>}<p className="dialog-description">{product.description}</p>
           <div className="quantity-control"><span>Quantity</span><div><button aria-label="Decrease quantity" disabled={quantity <= 1} onClick={() => setQuantity((value) => value - 1)}><Minus size={15} /></button><span aria-live="polite">{quantity}</span><button aria-label="Increase quantity" onClick={() => setQuantity((value) => value + 1)}><Plus size={15} /></button></div></div>
           <div className="modifier-groups">{product.modifiers.map((group) => <ModifierSelector key={group.name} group={group} selected={selections[group.name] ?? ""} onSelect={(value) => { setSelections((current) => ({ ...current, [group.name]: value })); setError(""); }} />)}</div>
           {error && <p className="form-error" role="alert">{error}</p>}
@@ -452,19 +532,32 @@ function ModifierSelector({ group, selected, onSelect }: { group: ModifierGroup;
   return <fieldset className="modifier-group" id={`group-${group.name}`}><legend>{group.name}<span>{group.required ? "REQUIRED · CHOOSE ONE" : "OPTIONAL"}</span></legend><div className="modifier-options">{group.options.map((option) => <label key={option.name} className={selected === option.name ? "option-selected" : ""}><input type="radio" name={`modifier-${group.name}`} checked={selected === option.name} onChange={() => onSelect(option.name)} /><span>{option.name}</span>{option.price > 0 && <strong>+{money(option.price)}</strong>}</label>)}</div></fieldset>;
 }
 
-function CartPage({ cart, products, blockedItems, subtotal, tax, total, pickupTime, setPickupTime, coupon, setCoupon, couponMessage, applyCoupon, onQuantity, onMenu, onCheckout, onLocation }: { cart: CartItem[]; products: Map<string, Product>; blockedItems: string[]; subtotal: number; tax: number; total: number; pickupTime: string; setPickupTime: (value: string) => void; coupon: string; setCoupon: (value: string) => void; couponMessage: string; applyCoupon: () => void; onQuantity: (key: string, delta: number) => void; onMenu: () => void; onCheckout: () => void; onLocation: () => void }) {
+function CartPage({ cart, products, offers, priced, promotions, onSelect, blockedItems, subtotal, tax, total, pickupTime, setPickupTime, coupon, setCoupon, couponMessage, applyCoupon, onQuantity, onMenu, onCheckout, onLocation }: { cart: CartItem[]; products: Map<string, Product>; offers: Map<string, Offer>; priced: PricedCart; promotions: StorePromotion[]; onSelect: (product: Product) => void; blockedItems: string[]; subtotal: number; tax: number; total: number; pickupTime: string; setPickupTime: (value: string) => void; coupon: string; setCoupon: (value: string) => void; couponMessage: string; applyCoupon: () => void; onQuantity: (key: string, delta: number) => void; onMenu: () => void; onCheckout: () => void; onLocation: () => void }) {
   return <section className="page-container cart-page"><div className="breadcrumbs"><button onClick={onMenu}>The menu</button><ChevronRight size={14} /><span>Your bag</span></div><div className="page-heading"><p className="eyebrow">GOOD CHOICES, BY THE WAY</p><h1>Your little <em>bag.</em></h1><p>{cart.length === 0 ? "It’s looking a little lonely in here." : `${cart.reduce((n, item) => n + item.quantity, 0)} lovely ${cart.reduce((n, item) => n + item.quantity, 0) === 1 ? "sip" : "sips"} coming right up.`}</p></div>
     {cart.length === 0 ? <div className="empty-cart"><div className="empty-cart-art">♡</div><h2>Your bag is waiting<br />for something <em>lovely.</em></h2><p>Find a new favorite, or come back to an old one.</p><button className="button button-dark" onClick={onMenu}>Find your favorite <ArrowRight size={16} /></button></div> :
-      <div className="cart-layout"><div className="cart-lines">{cart.map((item) => { const product = products.get(item.productId); if (!product) return null; const addOn = product.modifiers.reduce((sum, group) => sum + (group.options.find((option) => option.name === item.selections[group.name])?.price ?? 0), 0); return <article className="cart-line" key={item.key}><DrinkArt product={product} className="cart-art" /><div className="cart-line-main"><p className="product-category">{product.category}</p><h2>{product.name}</h2><div className="cart-selections">{Object.entries(item.selections).map(([group, selection]) => <span key={group}>{group}: {selection}</span>)}</div><div className="quantity-control cart-quantity"><span>Quantity</span><div><button aria-label={`Decrease ${product.name} quantity`} disabled={item.quantity <= 1} onClick={() => onQuantity(item.key, -1)}><Minus size={15} /></button><span>{item.quantity}</span><button aria-label={`Increase ${product.name} quantity`} onClick={() => onQuantity(item.key, 1)}><Plus size={15} /></button></div></div></div><div className="cart-line-price"><strong>{money(((product.salePrice ?? product.price) + addOn) * item.quantity)}</strong><button aria-label={`Remove ${product.name} from bag`} onClick={() => onQuantity(item.key, -item.quantity)}><Trash2 size={15} /> Remove</button></div></article>})}
+      <div className="cart-layout"><div className="cart-lines">{cart.map((item) => { const product = products.get(item.productId); if (!product) return null; const addOn = product.modifiers.reduce((sum, group) => sum + (group.options.find((option) => option.name === item.selections[group.name])?.price ?? 0), 0); return <article className="cart-line" key={item.key}><DrinkArt product={product} className="cart-art" /><div className="cart-line-main"><p className="product-category">{product.category}</p><h2>{product.name}</h2><div className="cart-selections">{Object.entries(item.selections).map(([group, selection]) => <span key={group}>{group}: {selection}</span>)}</div><div className="quantity-control cart-quantity"><span>Quantity</span><div><button aria-label={`Decrease ${product.name} quantity`} disabled={item.quantity <= 1} onClick={() => onQuantity(item.key, -1)}><Minus size={15} /></button><span>{item.quantity}</span><button aria-label={`Increase ${product.name} quantity`} onClick={() => onQuantity(item.key, 1)}><Plus size={15} /></button></div></div></div><div className="cart-line-price">{offers.get(product.id)?.percentOff && <del>{money((product.price + addOn) * item.quantity)}</del>}<strong>{cents(((offers.get(product.id)?.nowCents ?? toCents(product.salePrice ?? product.price)) + toCents(addOn)) * item.quantity)}</strong><button aria-label={`Remove ${product.name} from bag`} onClick={() => onQuantity(item.key, -item.quantity)}><Trash2 size={15} /> Remove</button></div></article>})}
+        <BundleNudges cart={cart} products={products} promotions={promotions} onSelect={onSelect} />
         <button className="text-button cart-continue" onClick={onMenu}><ArrowLeft size={15} /> Add another little something</button>
         <div className="pickup-card"><div className="pickup-icon"><MapPin /></div><div><p className="product-category">PICKUP AT</p><h3>Fig & Froth · Paterson</h3><p>Paterson, NJ</p></div><button className="text-button" onClick={onLocation}>Change</button><label className="pickup-time-label"><Clock3 size={16} /><span>When would you like it?</span><select value={pickupTime} onChange={(event) => setPickupTime(event.target.value)}><option>Next available</option><option>In 30 minutes</option><option>In 1 hour</option><option>Schedule for later</option></select><ChevronDown size={15} /></label></div>
       </div>
-      <aside className="order-summary"><p className="eyebrow">THE HAPPY TOTAL</p><h2>Order <em>summary</em></h2>{blockedItems.length > 0 && <p className="cart-stock-error" role="alert">Please remove or adjust unavailable items before checkout: {blockedItems.join(", ")}.</p>}<label className="coupon-field"><input value={coupon} onChange={(event) => setCoupon(event.target.value)} placeholder="Coupon or gift card" /><button onClick={applyCoupon}>Apply</button></label>{couponMessage && <p className="coupon-message" role="status">{couponMessage}</p>}<div className="summary-row"><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div className="summary-row"><span>Estimated tax</span><strong>{money(tax)}</strong></div><div className="summary-total"><span>Estimated total</span><strong>{money(total)}</strong></div><p className="tax-note">Your final total is confirmed at checkout.</p><button className="button button-dark checkout-button" disabled={blockedItems.length > 0} onClick={onCheckout}>Continue to checkout <ArrowRight size={16} /></button><div className="safe-note"><span>♡</span> Your details stay safe and sound.</div><p className="demo-note">Demo storefront · payments aren’t connected yet.</p></aside></div>}
+      <aside className="order-summary"><p className="eyebrow">THE HAPPY TOTAL</p><h2>Order <em>summary</em></h2>{blockedItems.length > 0 && <p className="cart-stock-error" role="alert">Please remove or adjust unavailable items before checkout: {blockedItems.join(", ")}.</p>}<label className="coupon-field"><input value={coupon} onChange={(event) => setCoupon(event.target.value)} placeholder="Coupon or gift card" /><button onClick={applyCoupon}>Apply</button></label>{couponMessage && <p className="coupon-message" role="status">{couponMessage}</p>}{priced.bundles.map((bundle) => <div className="summary-row summary-deal" key={bundle.promotionId}><span><Tag size={11} /> Bundle: {bundle.productIds.map((id) => products.get(id)?.name ?? id).join(" + ")}{bundle.count > 1 ? ` ×${bundle.count}` : ""}</span><strong>−{cents(bundle.discountCents)}</strong></div>)}<div className="summary-row"><span>Subtotal</span><strong>{money(subtotal)}</strong></div>{priced.savingsCents > 0 && <p className="summary-saved">You’re saving {cents(priced.savingsCents)} with this week’s deals.</p>}<div className="summary-row"><span>Estimated tax</span><strong>{money(tax)}</strong></div><div className="summary-total"><span>Estimated total</span><strong>{money(total)}</strong></div><p className="tax-note">Your final total is confirmed at checkout.</p><button className="button button-dark checkout-button" disabled={blockedItems.length > 0} onClick={onCheckout}>Continue to checkout <ArrowRight size={16} /></button><div className="safe-note"><span>♡</span> Your details stay safe and sound.</div><p className="demo-note">Demo storefront · payments aren’t connected yet.</p></aside></div>}
   </section>;
 }
 
-function ConfirmationPage({ order, onMenu }: { order: { number: string; pickupTime: string }; onMenu: () => void }) {
-  return <section className="page-container confirmation-page"><div className="page-heading"><p className="eyebrow">ORDER {order.number}</p><h1>It’s in. <em>Thank you!</em></h1><p>We’re making it now{order.pickupTime === "Next available" ? "" : `, ready ${order.pickupTime.toLowerCase()}`}. Pay at the counter when you pick up in Paterson.</p></div><button className="button button-dark" onClick={onMenu}>Back to the menu <ArrowRight size={16} /></button></section>;
+function BundleNudges({ cart, products, promotions, onSelect }: { cart: CartItem[]; products: Map<string, Product>; promotions: StorePromotion[]; onSelect: (product: Product) => void }) {
+  const inBag = new Set(cart.map((item) => item.productId));
+  const nudges = promotions.flatMap((promo) => {
+    if (promo.kind !== "bundle") return [];
+    const missing = promo.productIds.filter((id) => !inBag.has(id));
+    const partner = missing.length === 1 ? products.get(missing[0]) : undefined;
+    return partner && isAvailable(partner) ? [{ promo, partner }] : [];
+  });
+  if (nudges.length === 0) return null;
+  return <div className="bundle-nudges">{nudges.map(({ promo, partner }) => <button key={promo.id} className="bundle-nudge" onClick={() => onSelect(partner)}><Tag size={14} /><span>Add the <strong>{partner.name}</strong> and save {promo.percentOff}% on the pair.</span><Plus size={14} /></button>)}</div>;
+}
+
+function ConfirmationPage({ order, onMenu }: { order: { number: string; pickupTime: string; subtotalCents?: number; savingsCents?: number }; onMenu: () => void }) {
+  return <section className="page-container confirmation-page"><div className="page-heading"><p className="eyebrow">ORDER {order.number}</p><h1>It’s in. <em>Thank you!</em></h1><p>We’re making it now{order.pickupTime === "Next available" ? "" : `, ready ${order.pickupTime.toLowerCase()}`}. Pay {order.subtotalCents != null ? `${cents(order.subtotalCents)} plus tax ` : ""}at the counter when you pick up in Paterson.{order.savingsCents ? ` You saved ${cents(order.savingsCents)} with this week’s deals.` : ""}</p></div><button className="button button-dark" onClick={onMenu}>Back to the menu <ArrowRight size={16} /></button></section>;
 }
 
 function CheckoutPage({ items, blockedItems, pickupTime, checkoutAvailable, pickupAvailable, environment, error, isSubmitting, onBack, onSubmit }: { items: CartItem[]; blockedItems: string[]; pickupTime: string; checkoutAvailable: boolean | null; pickupAvailable: boolean; environment: string; error: string; isSubmitting: boolean; onBack: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>, buyer: { name: string; email: string; phone?: string }) => void }) {
