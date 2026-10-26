@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { z } from "zod";
 import { initialProducts } from "../src/catalog.ts";
+import { priceCart, saleUnitCents } from "../src/pricing.ts";
+import { createOwnerAuth } from "./admin-auth.js";
+import { registerOpsClaude } from "./ops-claude.js";
+import { createPromotionBoard, registerPromotions } from "./promotions.js";
+import { createOrderBook, orderItems } from "./shop-orders.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -44,6 +49,14 @@ const allowedCheckoutHosts = new Set([
 app.disable("x-powered-by");
 app.use(express.json({ limit: "32kb", strict: true }));
 
+// Behind the Counter: owner sign-in, the storefront orders it shows as they arrive, and the
+// promotions it publishes.
+const ownerAuth = createOwnerAuth();
+const orderBook = createOrderBook();
+const promotionBoard = createPromotionBoard();
+ownerAuth.register(app);
+registerPromotions(app, { board: promotionBoard, productsById, guard: ownerAuth.requireOwner });
+
 function validateConfiguration() {
   if (environment !== "sandbox" && environment !== "production") {
     return "SQUARE_ENVIRONMENT must be sandbox or production.";
@@ -78,7 +91,9 @@ function enforceRateLimit(req, res, next) {
   return next();
 }
 
-function buildLineItems(items) {
+const regularCents = (product) => Math.round((product.salePrice ?? product.price) * 100);
+
+function buildLineItems(items, promotions = []) {
   return items.map(({ productId, quantity, selections }) => {
     const product = productsById.get(productId);
     if (!product || !product.available || product.stock !== undefined && product.stock <= 0) {
@@ -115,12 +130,34 @@ function buildLineItems(items) {
       name: product.name,
       quantity: String(quantity),
       base_price_money: {
-        amount: Math.round((product.salePrice ?? product.price) * 100),
+        amount: saleUnitCents(product.id, regularCents(product), promotions).cents,
         currency: "USD",
       },
       ...(modifiers.length > 0 ? { modifiers } : {}),
     };
   });
+}
+
+/**
+ * Trusted prices for an order, with the owner's live promotions: sale prices go on the line items
+ * and bundle savings become order-level discounts, so Square charges what the storefront showed.
+ */
+function priceOrder(items, promotions = promotionBoard.list()) {
+  const lineItems = buildLineItems(items, promotions);
+  const priced = priceCart(items.map((item, index) => ({
+    productId: item.productId,
+    quantity: item.quantity,
+    unitCents: regularCents(productsById.get(item.productId)),
+    extrasCents: (lineItems[index].modifiers ?? []).reduce((sum, modifier) => sum + modifier.base_price_money.amount, 0),
+  })), promotions);
+  const discounts = priced.bundles.map((bundle) => ({
+    uid: bundle.promotionId,
+    name: `Bundle: ${bundle.productIds.map((id) => productsById.get(id)?.name ?? id).join(" + ")}`,
+    type: "FIXED_AMOUNT",
+    amount_money: { amount: bundle.discountCents, currency: "USD" },
+    scope: "ORDER",
+  }));
+  return { lineItems, discounts, subtotalCents: priced.subtotalCents, savingsCents: priced.savingsCents };
 }
 
 function validatePaymentUrl(value) {
@@ -132,12 +169,14 @@ function validatePaymentUrl(value) {
   }
 }
 
+function squareCheckoutReady() {
+  return validateConfiguration() === null && Boolean(accessToken && locationId && publicBaseUrl);
+}
+
 app.get("/api/checkout/status", (_req, res) => {
-  const configurationError = validateConfiguration();
-  res.json({
-    available: configurationError === null && Boolean(accessToken && locationId && publicBaseUrl),
-    environment,
-  });
+  const available = squareCheckoutReady();
+  // Without Square, customers can still place a pickup order and pay at the counter.
+  res.json({ available, environment, pickupAvailable: !available });
 });
 
 app.post("/api/checkout", enforceRateLimit, async (req, res) => {
@@ -155,9 +194,9 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
     return res.status(400).json({ error: "Some checkout details are missing or invalid. Please review the form and your bag." });
   }
 
-  let lineItems;
+  let pricing;
   try {
-    lineItems = buildLineItems(parsed.data.items);
+    pricing = priceOrder(parsed.data.items);
   } catch (error) {
     return res.status(400).json({ error: error instanceof Error ? error.message : "One or more items could not be checked." });
   }
@@ -180,7 +219,8 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
     idempotency_key: parsed.data.idempotencyKey,
     order: {
       location_id: locationId,
-      line_items: lineItems,
+      line_items: pricing.lineItems,
+      ...(pricing.discounts.length > 0 ? { discounts: pricing.discounts } : {}),
       pricing_options: { auto_apply_taxes: true },
       fulfillments: [{
         type: "PICKUP",
@@ -225,12 +265,50 @@ app.post("/api/checkout", enforceRateLimit, async (req, res) => {
       console.error("Square returned an unexpected checkout URL host.");
       return res.status(502).json({ error: "Square returned an invalid checkout link. Please contact the shop." });
     }
+    orderBook.add({ idempotencyKey: parsed.data.idempotencyKey, source: "square", pickupTime, items: orderItems(parsed.data.items, productsById) });
     return res.status(201).json({ checkoutUrl });
   } catch (error) {
     console.error("Square checkout request failed:", error instanceof Error ? error.message : "Unknown network error");
     return res.status(502).json({ error: "Couldn’t reach Square to start checkout. Please try again." });
   }
 });
+
+const pickupLimits = new Map();
+function limitPickupOrders(req, res, next) {
+  const now = Date.now();
+  const entry = pickupLimits.get(req.ip);
+  if (!entry || entry.resetAt <= now) {
+    pickupLimits.set(req.ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return next();
+  }
+  if (entry.count >= 40) return res.status(429).json({ error: "Too many orders at once. Please wait a little and try again." });
+  entry.count += 1;
+  return next();
+}
+
+app.post("/api/orders/pickup", limitPickupOrders, (req, res) => {
+  if (squareCheckoutReady()) return res.status(409).json({ error: "Please check out with Square." });
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Some order details are missing or invalid. Please review the form and your bag." });
+  }
+  let pricing;
+  try {
+    pricing = priceOrder(parsed.data.items);
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "One or more items could not be checked." });
+  }
+  const order = orderBook.add({ idempotencyKey: parsed.data.idempotencyKey, source: "pickup", pickupTime: parsed.data.pickupTime, items: orderItems(parsed.data.items, productsById) });
+  return res.status(201).json({ orderNumber: order.number, subtotalCents: pricing.subtotalCents, savingsCents: pricing.savingsCents });
+});
+
+app.get("/api/admin/orders", ownerAuth.requireOwner, (req, res) => {
+  const after = Number.parseInt(String(req.query.after ?? "0"), 10);
+  res.json({ orders: orderBook.since(Number.isFinite(after) ? after : 0) });
+});
+
+// Optional Claude mode for Behind the Counter (off unless ANTHROPIC_API_KEY is set). Owner only.
+registerOpsClaude(app, { guard: ownerAuth.requireOwner });
 
 if (existsSync(distDirectory)) {
   app.use(express.static(distDirectory, { index: false, maxAge: "1h" }));
@@ -254,4 +332,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   });
 }
 
-export { app, buildLineItems, validatePaymentUrl };
+export { app, buildLineItems, priceOrder, validatePaymentUrl };

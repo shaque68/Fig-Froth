@@ -405,6 +405,41 @@ h1 em, h2 em, h3 em { color: #a97968; font-weight: 500; }
 .footer-bottom { min-height: 51px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #dcdacf; color: #8b8a7f; font-size: 8px; }
 .footer-payments { color: #74766a; font-size: 7px; font-weight: 600; letter-spacing: .07em; }
 
+/* Deals the owner publishes from Behind the Counter */
+.announcement-deal { color: #fffaf0; background: #8a5a48; }
+.announcement-deal svg { color: #f3d9a4; }
+.announcement-deal span { color: #f0d2c4; }
+.announcement-deal button { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 3px 8px; border: 1px solid rgba(255,250,240,.55); background: transparent; color: inherit; font-size: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.announcement-deal button:hover { background: rgba(255,250,240,.14); }
+.deal-tag { background: #8a5a48; }
+.deals-section { max-width: 1240px; margin: 0 auto; padding: 60px clamp(24px, 5vw, 70px) 0; }
+.deals-section .section-heading h2 em { color: #a16f5e; }
+.deals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 22px; }
+.deal-card { display: grid; grid-template-columns: minmax(150px, 42%) 1fr; border: 1px solid #e3d6c8; background: #fbf6ef; }
+.deal-art { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; min-height: 210px; overflow: hidden; }
+.deal-art .drink-art .art-caption { display: none; }
+.deal-bundle .deal-art .glass { width: 74px; }
+.deal-bundle .deal-art .glass::before { width: 73px; }
+.deal-info { display: flex; flex-direction: column; gap: 8px; padding: 18px 18px 12px; }
+.deal-info h3 { margin: 0; color: #373f33; font-family: var(--serif); font-size: 19px; font-weight: 500; line-height: 1.25; }
+.deal-info > p { margin: 0; color: #838277; font-size: 10px; line-height: 1.6; }
+.deal-info .deal-price { color: #77776c; font-size: 11px; }
+.deal-price del { color: #929186; }
+.deal-price strong { color: var(--green); font-size: 16px; }
+.deal-actions { margin-top: auto; }
+.deal-actions .product-add + .product-add { border-top-style: dashed; }
+.product-bundle-note { margin: 7px 0 0; color: #a16f5e; font-size: 9px; font-weight: 600; }
+.dialog-price del { margin-right: 7px; color: #929186; font-size: 12px; font-weight: 400; }
+.dialog-deal { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; color: #8a5a48; font-size: 10px; font-weight: 600; }
+.cart-line-price del { margin-bottom: -10px; color: #929186; font-size: 10px; }
+.bundle-nudges { display: grid; gap: 8px; margin: 12px 0 0; }
+.bundle-nudge { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border: 1px dashed #cfae97; background: #fbf6ef; color: #6f4d40; font-size: 10px; text-align: left; cursor: pointer; }
+.bundle-nudge span { flex: 1; }
+.bundle-nudge:hover { border-style: solid; }
+.summary-deal span { display: inline-flex; align-items: center; gap: 5px; color: #8a5a48; }
+.summary-deal strong { color: #8a5a48; }
+.summary-saved { margin: -2px 0 6px; color: #8a5a48; font-size: 9px; font-weight: 600; }
+
 @media (min-width: 1441px) {
   .hero { min-height: 570px; }
 }
@@ -425,6 +460,9 @@ h1 em, h2 em, h3 em { color: #a97968; font-weight: 500; }
   .footer-illustration { font-size: 72px; }
 }
 @media (max-width: 650px) {
+  .deal-card { grid-template-columns: 1fr; }
+  .deal-art { min-height: 180px; }
+  .announcement-deal { flex-wrap: wrap; text-align: center; }
   .announcement { min-height: 29px; font-size: 8px; }
   .site-header { height: 68px; padding: 0 18px; }
   .brand-mark { width: 31px; height: 31px; }
@@ -572,3 +610,4 @@ h1 em, h2 em, h3 em { color: #a97968; font-weight: 500; }
   .footer-bottom { min-height: unset; flex-wrap: wrap; justify-content: flex-start; padding: 12px 0; font-size: 8px; }
   .footer-payments { display: none; }
 }
+.summary-deal strong { white-space: nowrap; }
